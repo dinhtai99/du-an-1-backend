@@ -4,22 +4,23 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const { verifyToken, requireAdmin } = require("../middleware/authMiddleware");
 
-// 👥 Lấy danh sách nhân viên (Admin only)
+// 👥 Lấy danh sách người dùng (Admin only) - bao gồm cả customer và staff
 router.get("/", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { search, role, page = 1, limit = 10 } = req.query;
     const query = {};
 
-    // Tìm kiếm theo tên hoặc số điện thoại
+    // Tìm kiếm theo tên, email, số điện thoại
     if (search) {
       query.$or = [
         { fullName: { $regex: search, $options: "i" } },
         { phone: { $regex: search, $options: "i" } },
         { username: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
       ];
     }
 
-    // Lọc theo role
+    // Lọc theo role (admin, staff, customer)
     if (role) {
       query.role = role;
     }
@@ -167,6 +168,81 @@ router.delete("/:id", verifyToken, requireAdmin, async (req, res) => {
   } catch (error) {
     console.error("Delete user error:", error);
     res.status(500).json({ message: "Lỗi server khi xóa nhân viên!" });
+  }
+});
+
+// 📦 Lấy lịch sử mua hàng của customer (Admin xem customer, Customer xem của mình)
+router.get("/:id/orders", verifyToken, async (req, res) => {
+  try {
+    const userId = req.params.id;
+
+    // Customer chỉ xem đơn hàng của mình
+    if (req.user.role === "customer" && userId !== req.user.userId) {
+      return res.status(403).json({ message: "Không có quyền xem đơn hàng này!" });
+    }
+
+    const Order = require("../models/Order");
+    const orders = await Order.find({ customer: userId })
+      .populate("items.product", "name image price")
+      .sort({ createdAt: -1 });
+
+    res.json(orders);
+  } catch (error) {
+    console.error("Get user orders error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
+// 👥 Quản lý khách hàng (Admin only) - Lấy danh sách khách hàng
+router.get("/customers/list", verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const { search, page = 1, limit = 10 } = req.query;
+    const query = { role: "customer" };
+
+    // Tìm kiếm theo tên, email, số điện thoại
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { phone: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const customers = await User.find(query)
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await User.countDocuments(query);
+
+    // Lấy số đơn hàng và tổng tiền đã mua của mỗi khách hàng
+    const Order = require("../models/Order");
+    const customersWithStats = await Promise.all(
+      customers.map(async (customer) => {
+        const orders = await Order.find({ customer: customer._id, status: "completed" });
+        const totalOrders = orders.length;
+        const totalSpent = orders.reduce((sum, order) => sum + order.total, 0);
+
+        return {
+          ...customer.toObject(),
+          totalOrders,
+          totalSpent,
+        };
+      })
+    );
+
+    res.json({
+      customers: customersWithStats,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit)),
+    });
+  } catch (error) {
+    console.error("Get customers error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
   }
 });
 

@@ -1,12 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const Invoice = require("../models/Invoice");
+const Order = require("../models/Order");
 const Product = require("../models/Product");
-const Customer = require("../models/Customer");
-const { verifyToken } = require("../middleware/authMiddleware");
+const User = require("../models/User");
+const { verifyToken, requireAdmin } = require("../middleware/authMiddleware");
 
-// 📊 Tổng hợp thống kê tổng quan
-router.get("/overview", verifyToken, async (req, res) => {
+// 📊 Tổng hợp thống kê tổng quan (Admin only)
+router.get("/overview", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
@@ -21,14 +21,14 @@ router.get("/overview", verifyToken, async (req, res) => {
       }
     }
 
-    const invoices = await Invoice.find(query);
-    const totalInvoices = invoices.length;
-    const totalRevenue = invoices.reduce((sum, inv) => sum + inv.total, 0);
+    const orders = await Order.find(query);
+    const totalOrders = orders.length;
+    const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
 
     // Tính lợi nhuận (tổng doanh thu - tổng giá nhập)
     let totalProfit = 0;
-    for (const invoice of invoices) {
-      for (const item of invoice.items) {
+    for (const order of orders) {
+      for (const item of order.items) {
         const product = await Product.findById(item.product);
         if (product) {
           const cost = product.importPrice * item.quantity;
@@ -42,7 +42,7 @@ router.get("/overview", verifyToken, async (req, res) => {
     const totalProducts = await Product.countDocuments({ status: 1 });
 
     // Tổng số khách hàng
-    const totalCustomers = await Customer.countDocuments({ active: true });
+    const totalCustomers = await User.countDocuments({ role: "customer" });
 
     // Sản phẩm tồn kho thấp
     const lowStockProducts = await Product.countDocuments({
@@ -51,7 +51,7 @@ router.get("/overview", verifyToken, async (req, res) => {
     });
 
     res.json({
-      totalInvoices,
+      totalOrders,
       totalRevenue,
       totalProfit,
       totalProducts,
@@ -64,8 +64,8 @@ router.get("/overview", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Top 5 sản phẩm bán chạy (theo số lượng)
-router.get("/top-products/quantity", verifyToken, async (req, res) => {
+// 📊 Top 5 sản phẩm bán chạy (theo số lượng) - Admin only
+router.get("/top-products/quantity", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { limit = 5, startDate, endDate } = req.query;
 
@@ -80,38 +80,27 @@ router.get("/top-products/quantity", verifyToken, async (req, res) => {
       }
     }
 
-    const invoices = await Invoice.find(query);
-    const productStats = {};
+    const topProducts = await Order.aggregate([
+      { $match: query },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.product",
+          totalSold: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: "$items.subtotal" },
+        },
+      },
+      { $sort: { totalSold: -1 } },
+      { $limit: parseInt(limit) },
+    ]);
 
-    // Đếm số lượng bán của từng sản phẩm
-    for (const invoice of invoices) {
-      for (const item of invoice.items) {
-        const productId = item.product.toString();
-        if (!productStats[productId]) {
-          productStats[productId] = {
-            productId: item.product,
-            quantity: 0,
-            revenue: 0,
-          };
-        }
-        productStats[productId].quantity += item.quantity;
-        productStats[productId].revenue += item.subtotal;
-      }
-    }
-
-    // Sắp xếp theo số lượng và lấy top
-    const topProducts = Object.values(productStats)
-      .sort((a, b) => b.quantity - a.quantity)
-      .slice(0, parseInt(limit));
-
-    // Populate thông tin sản phẩm
     const result = await Promise.all(
       topProducts.map(async (stat) => {
-        const product = await Product.findById(stat.productId).populate("category", "name");
+        const product = await Product.findById(stat._id).populate("category", "name");
         return {
           product: product,
-          quantity: stat.quantity,
-          revenue: stat.revenue,
+          quantity: stat.totalSold,
+          revenue: stat.totalRevenue,
         };
       })
     );
@@ -123,8 +112,8 @@ router.get("/top-products/quantity", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Top 5 sản phẩm bán chạy (theo doanh thu)
-router.get("/top-products/revenue", verifyToken, async (req, res) => {
+// 📊 Top 5 sản phẩm bán chạy (theo doanh thu) - Admin only
+router.get("/top-products/revenue", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { limit = 5, startDate, endDate } = req.query;
 
@@ -139,38 +128,27 @@ router.get("/top-products/revenue", verifyToken, async (req, res) => {
       }
     }
 
-    const invoices = await Invoice.find(query);
-    const productStats = {};
+    const topProducts = await Order.aggregate([
+      { $match: query },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.product",
+          totalSold: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: "$items.subtotal" },
+        },
+      },
+      { $sort: { totalRevenue: -1 } },
+      { $limit: parseInt(limit) },
+    ]);
 
-    // Tính doanh thu của từng sản phẩm
-    for (const invoice of invoices) {
-      for (const item of invoice.items) {
-        const productId = item.product.toString();
-        if (!productStats[productId]) {
-          productStats[productId] = {
-            productId: item.product,
-            quantity: 0,
-            revenue: 0,
-          };
-        }
-        productStats[productId].quantity += item.quantity;
-        productStats[productId].revenue += item.subtotal;
-      }
-    }
-
-    // Sắp xếp theo doanh thu và lấy top
-    const topProducts = Object.values(productStats)
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, parseInt(limit));
-
-    // Populate thông tin sản phẩm
     const result = await Promise.all(
       topProducts.map(async (stat) => {
-        const product = await Product.findById(stat.productId).populate("category", "name");
+        const product = await Product.findById(stat._id).populate("category", "name");
         return {
           product: product,
-          quantity: stat.quantity,
-          revenue: stat.revenue,
+          quantity: stat.totalSold,
+          revenue: stat.totalRevenue,
         };
       })
     );
@@ -182,8 +160,8 @@ router.get("/top-products/revenue", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Doanh thu theo ngày
-router.get("/revenue/daily", verifyToken, async (req, res) => {
+// 📊 Doanh thu theo ngày - Admin only
+router.get("/revenue/daily", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
@@ -198,15 +176,15 @@ router.get("/revenue/daily", verifyToken, async (req, res) => {
       }
     }
 
-    const invoices = await Invoice.find(query);
+    const orders = await Order.find(query);
     const dailyRevenue = {};
 
-    invoices.forEach((invoice) => {
-      const date = invoice.createdAt.toISOString().split("T")[0];
+    orders.forEach((order) => {
+      const date = order.createdAt.toISOString().split("T")[0];
       if (!dailyRevenue[date]) {
         dailyRevenue[date] = { date, revenue: 0, count: 0 };
       }
-      dailyRevenue[date].revenue += invoice.total;
+      dailyRevenue[date].revenue += order.total;
       dailyRevenue[date].count += 1;
     });
 
@@ -221,8 +199,8 @@ router.get("/revenue/daily", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Doanh thu theo tháng
-router.get("/revenue/monthly", verifyToken, async (req, res) => {
+// 📊 Doanh thu theo tháng - Admin only
+router.get("/revenue/monthly", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { year } = req.query;
     const currentYear = year || new Date().getFullYear();
@@ -230,7 +208,7 @@ router.get("/revenue/monthly", verifyToken, async (req, res) => {
     const startDate = new Date(currentYear, 0, 1);
     const endDate = new Date(currentYear, 11, 31, 23, 59, 59, 999);
 
-    const invoices = await Invoice.find({
+    const orders = await Order.find({
       status: "completed",
       createdAt: { $gte: startDate, $lte: endDate },
     });
@@ -240,9 +218,9 @@ router.get("/revenue/monthly", verifyToken, async (req, res) => {
       monthlyRevenue[i] = { month: i + 1, revenue: 0, count: 0 };
     }
 
-    invoices.forEach((invoice) => {
-      const month = invoice.createdAt.getMonth();
-      monthlyRevenue[month].revenue += invoice.total;
+    orders.forEach((order) => {
+      const month = order.createdAt.getMonth();
+      monthlyRevenue[month].revenue += order.total;
       monthlyRevenue[month].count += 1;
     });
 
@@ -254,18 +232,18 @@ router.get("/revenue/monthly", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Doanh thu theo năm
-router.get("/revenue/yearly", verifyToken, async (req, res) => {
+// 📊 Doanh thu theo năm - Admin only
+router.get("/revenue/yearly", verifyToken, requireAdmin, async (req, res) => {
   try {
-    const invoices = await Invoice.find({ status: "completed" });
+    const orders = await Order.find({ status: "completed" });
     const yearlyRevenue = {};
 
-    invoices.forEach((invoice) => {
-      const year = invoice.createdAt.getFullYear();
+    orders.forEach((order) => {
+      const year = order.createdAt.getFullYear();
       if (!yearlyRevenue[year]) {
         yearlyRevenue[year] = { year, revenue: 0, count: 0 };
       }
-      yearlyRevenue[year].revenue += invoice.total;
+      yearlyRevenue[year].revenue += order.total;
       yearlyRevenue[year].count += 1;
     });
 
@@ -277,8 +255,8 @@ router.get("/revenue/yearly", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Thống kê sản phẩm tồn kho ít nhất
-router.get("/low-stock", verifyToken, async (req, res) => {
+// 📊 Thống kê sản phẩm tồn kho ít nhất - Admin only
+router.get("/low-stock", verifyToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.find({
       $expr: { $lte: ["$stock", "$minStock"] },
@@ -302,8 +280,8 @@ router.get("/low-stock", verifyToken, async (req, res) => {
   }
 });
 
-// 📊 Thống kê theo phương thức thanh toán
-router.get("/payment-methods", verifyToken, async (req, res) => {
+// 📊 Thống kê theo phương thức thanh toán - Admin only
+router.get("/payment-methods", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
@@ -318,18 +296,18 @@ router.get("/payment-methods", verifyToken, async (req, res) => {
       }
     }
 
-    const invoices = await Invoice.find(query);
+    const orders = await Order.find(query);
     const paymentStats = {
-      cash: { count: 0, revenue: 0 },
-      transfer: { count: 0, revenue: 0 },
+      COD: { count: 0, revenue: 0 },
       card: { count: 0, revenue: 0 },
+      "e-wallet": { count: 0, revenue: 0 },
     };
 
-    invoices.forEach((invoice) => {
-      const method = invoice.paymentMethod;
+    orders.forEach((order) => {
+      const method = order.paymentMethod;
       if (paymentStats[method]) {
         paymentStats[method].count += 1;
-        paymentStats[method].revenue += invoice.total;
+        paymentStats[method].revenue += order.total;
       }
     });
 

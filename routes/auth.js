@@ -138,6 +138,70 @@ router.put("/change-password", verifyToken, async (req, res) => {
   }
 });
 
+// 👤 Đăng ký (chỉ cho customer)
+router.post("/register", async (req, res) => {
+  try {
+    const { username, password, email, fullName, phone } = req.body;
+
+    if (!username || !password || !email || !fullName) {
+      return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin bắt buộc!" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Mật khẩu phải có ít nhất 6 ký tự!" });
+    }
+
+    // Kiểm tra username đã tồn tại
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+    if (existingUser) {
+      return res.status(400).json({ message: "Tên đăng nhập hoặc email đã tồn tại!" });
+    }
+
+    // Mã hóa mật khẩu
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newUser = new User({
+      username,
+      password: hashedPassword,
+      email,
+      fullName,
+      phone: phone || "",
+      role: "customer",
+    });
+
+    await newUser.save();
+
+    // Tạo JWT token
+    const token = jwt.sign(
+      { userId: newUser._id, username: newUser.username, role: newUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    const userInfo = {
+      id: newUser._id,
+      username: newUser.username,
+      email: newUser.email,
+      fullName: newUser.fullName,
+      role: newUser.role,
+      avatar: newUser.avatar,
+      phone: newUser.phone,
+    };
+
+    res.status(201).json({
+      message: "Đăng ký thành công!",
+      token,
+      user: userInfo,
+    });
+  } catch (error) {
+    console.error("Register error:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Tên đăng nhập hoặc email đã tồn tại!" });
+    }
+    res.status(500).json({ message: "Lỗi server khi đăng ký!" });
+  }
+});
+
 // 👤 Lấy thông tin user hiện tại
 router.get("/me", verifyToken, async (req, res) => {
   try {
@@ -148,6 +212,50 @@ router.get("/me", verifyToken, async (req, res) => {
     res.json(user);
   } catch (error) {
     console.error("Get me error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
+// ✏️ Cập nhật thông tin cá nhân (Customer)
+router.put("/me", verifyToken, async (req, res) => {
+  try {
+    const { fullName, email, phone, gender, dateOfBirth, avatar } = req.body;
+    const user = await User.findById(req.user.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng!" });
+    }
+
+    // Cập nhật thông tin
+    if (fullName) user.fullName = fullName;
+    if (email) {
+      // Kiểm tra email đã tồn tại chưa (trừ chính mình)
+      const existingUser = await User.findOne({ email, _id: { $ne: user._id } });
+      if (existingUser) {
+        return res.status(400).json({ message: "Email đã được sử dụng!" });
+      }
+      user.email = email;
+    }
+    if (phone !== undefined) user.phone = phone;
+    if (gender) user.gender = gender;
+    if (dateOfBirth) user.dateOfBirth = new Date(dateOfBirth);
+    if (avatar !== undefined) user.avatar = avatar;
+
+    user.updatedAt = Date.now();
+    await user.save();
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.json({
+      message: "Cập nhật thông tin thành công!",
+      user: userResponse,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+    if (error.code === 11000) {
+      return res.status(400).json({ message: "Email đã được sử dụng!" });
+    }
     res.status(500).json({ message: "Lỗi server!" });
   }
 });

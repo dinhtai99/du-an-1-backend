@@ -6,7 +6,21 @@ const { verifyToken } = require("../middleware/authMiddleware");
 // 📦 Lấy danh sách sản phẩm
 router.get("/", async (req, res) => {
   try {
-    const { search, category, minPrice, maxPrice, status, lowStock, page = 1, limit = 10 } = req.query;
+    const { 
+      search, 
+      category, 
+      minPrice, 
+      maxPrice, 
+      status, 
+      lowStock, 
+      minRating,
+      isFeatured,
+      isPromotion,
+      sortBy = "createdAt",
+      sortOrder = "desc",
+      page = 1, 
+      limit = 10 
+    } = req.query;
     const query = {};
 
     // Tìm kiếm theo tên
@@ -29,17 +43,47 @@ router.get("/", async (req, res) => {
     // Lọc theo status
     if (status !== undefined) {
       query.status = parseInt(status);
+    } else {
+      // Mặc định chỉ hiển thị sản phẩm đang hoạt động cho customer
+      query.status = 1;
     }
 
-    // Cảnh báo tồn kho thấp
+    // Lọc theo rating
+    if (minRating) {
+      query.rating = { $gte: parseFloat(minRating) };
+    }
+
+    // Lọc sản phẩm nổi bật
+    if (isFeatured === "true") {
+      query.isFeatured = true;
+    }
+
+    // Lọc sản phẩm khuyến mãi
+    if (isPromotion === "true") {
+      query.isPromotion = true;
+    }
+
+    // Cảnh báo tồn kho thấp (chỉ cho admin)
     if (lowStock === "true") {
       query.$expr = { $lte: ["$stock", "$minStock"] };
+    }
+
+    // Sắp xếp
+    const sortOptions = {};
+    if (sortBy === "price") {
+      sortOptions.price = sortOrder === "asc" ? 1 : -1;
+    } else if (sortBy === "rating") {
+      sortOptions.rating = sortOrder === "asc" ? 1 : -1;
+    } else if (sortBy === "name") {
+      sortOptions.name = sortOrder === "asc" ? 1 : -1;
+    } else {
+      sortOptions.createdAt = sortOrder === "asc" ? 1 : -1;
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const products = await Product.find(query)
       .populate("category", "name description")
-      .sort({ createdAt: -1 })
+      .sort(sortOptions)
       .skip(skip)
       .limit(parseInt(limit));
 
@@ -86,7 +130,7 @@ router.get("/:id", async (req, res) => {
 // ➕ Thêm sản phẩm mới
 router.post("/", verifyToken, async (req, res) => {
   try {
-    const { name, category, importPrice, price, stock, minStock, description, images, image } = req.body;
+    const { name, category, importPrice, price, salePrice, stock, minStock, description, images, image, colors, sizes, isFeatured, isPromotion } = req.body;
 
     if (!name || !category || !importPrice || !price) {
       return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin bắt buộc!" });
@@ -97,11 +141,16 @@ router.post("/", verifyToken, async (req, res) => {
       category,
       importPrice: parseFloat(importPrice),
       price: parseFloat(price),
+      salePrice: salePrice ? parseFloat(salePrice) : undefined,
       stock: parseInt(stock) || 0,
       minStock: parseInt(minStock) || 10,
       description: description || "",
       images: images || [],
       image: image || (images && images.length > 0 ? images[0] : ""),
+      colors: colors || [],
+      sizes: sizes || [],
+      isFeatured: isFeatured || false,
+      isPromotion: isPromotion || false,
     });
 
     await newProduct.save();
