@@ -116,12 +116,19 @@
             font-weight: 500;
         }
 
-        .form-group input {
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
             width: 100%;
             padding: 10px;
             border: 1px solid #ddd;
             border-radius: 5px;
             font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group select {
+            cursor: pointer;
         }
 
         .product-grid {
@@ -1198,8 +1205,8 @@
                                 <p><strong>Trạng thái:</strong> <span class="badge badge-${product.status === 1 ? 'success' : 'danger'}">${product.status === 1 ? 'Đang bán' : 'Ngừng bán'}</span></p>
                             </div>
                             <div class="action-buttons">
-                                <button class="btn btn-success" onclick="editProduct('${product._id}')">Sửa sản phẩm</button>
-                                <button class="btn btn-danger" onclick="deleteProduct('${product._id}')">Dừng bán</button>
+                                <button class="btn btn-success" onclick="closeModal('productModal'); editProduct('${product._id}')">Sửa sản phẩm</button>
+                                <button class="btn btn-danger" onclick="closeModal('productModal'); deleteProduct('${product._id}')">Dừng bán</button>
                             </div>
                         </div>
                     </div>
@@ -1394,6 +1401,13 @@
                 loadAdminProducts();
             })
             .catch(err => alert('Lỗi!'));
+        }
+
+        // Đóng modal khi click bên ngoài
+        window.onclick = function(event) {
+            if (event.target.classList.contains('modal')) {
+                event.target.style.display = 'none';
+            }
         }
 
         async function showUserModal(userId = null) {
