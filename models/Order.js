@@ -38,10 +38,19 @@ const orderSchema = new mongoose.Schema({
     default: "new" 
   }, // Mới → Đang xử lý → Đang giao → Hoàn thành / Hủy
   shipper: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // Nhân viên giao hàng
+  voucher: { type: mongoose.Schema.Types.ObjectId, ref: "Voucher" }, // Voucher đã sử dụng
+  voucherCode: { type: String }, // Mã voucher đã sử dụng
+  voucherDiscount: { type: Number, default: 0 }, // Số tiền giảm từ voucher
   notes: { type: String, default: "" },
   cancelledAt: { type: Date }, // Thời gian hủy
   cancelledReason: { type: String }, // Lý do hủy
   completedAt: { type: Date }, // Thời gian hoàn thành
+  timeline: [{ // Timeline theo dõi đơn hàng
+    status: { type: String, required: true },
+    message: { type: String, required: true },
+    updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    createdAt: { type: Date, default: Date.now },
+  }],
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });
