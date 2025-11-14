@@ -795,6 +795,12 @@
 
         // Chuyển đổi tab admin
         function switchAdminTab(tabName, buttonElement) {
+            // Dừng auto-refresh nếu có
+            if (orderRefreshInterval) {
+                clearInterval(orderRefreshInterval);
+                orderRefreshInterval = null;
+            }
+            
             // Ẩn tất cả tab content
             document.querySelectorAll('.admin-tab-content').forEach(tab => {
                 tab.classList.add('hidden');
@@ -819,9 +825,36 @@
             // Load dữ liệu cho tab
             if (tabName === 'overview') loadAdminOverview();
             else if (tabName === 'products') loadAdminProducts();
-            else if (tabName === 'orders') loadAdminOrders();
+            else if (tabName === 'orders') {
+                loadAdminOrders();
+                // Tự động bật auto-refresh nếu checkbox đã được chọn
+                setTimeout(() => {
+                    if (document.getElementById('autoRefreshOrders')?.checked) {
+                        toggleOrderAutoRefresh();
+                    }
+                }, 100);
+            }
             else if (tabName === 'users') loadAdminUsers();
             else if (tabName === 'categories') loadAdminCategories();
+        }
+
+        // Toggle auto-refresh cho đơn hàng
+        function toggleOrderAutoRefresh() {
+            const checkbox = document.getElementById('autoRefreshOrders');
+            if (!checkbox) return;
+            
+            if (checkbox.checked) {
+                // Bật auto-refresh mỗi 30 giây
+                orderRefreshInterval = setInterval(() => {
+                    loadAdminOrders();
+                }, 30000);
+            } else {
+                // Tắt auto-refresh
+                if (orderRefreshInterval) {
+                    clearInterval(orderRefreshInterval);
+                    orderRefreshInterval = null;
+                }
+            }
         }
 
         // Tổng quan Dashboard
@@ -975,17 +1008,40 @@
         }
 
         // Quản lý Đơn hàng
+        let orderRefreshInterval = null;
+        
         async function loadAdminOrders() {
             try {
-                const response = await fetch(`${API_URL}/orders?limit=50`, {
+                const statusFilter = document.getElementById('orderStatusFilter')?.value || '';
+                let url = `${API_URL}/orders?limit=50`;
+                if (statusFilter) url += `&status=${statusFilter}`;
+                
+                const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await response.json();
                 
                 let html = `
-                    <div style="margin-bottom: 20px;">
-                        <h3>Danh sách đơn hàng</h3>
-                        <p style="color: #666;">Tổng số đơn hàng: ${data.total || 0}</p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div style="flex: 1;">
+                            <h3>Danh sách đơn hàng</h3>
+                            <p style="color: #666; margin: 5px 0;">Tổng số đơn hàng: ${data.total || 0}</p>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <select id="orderStatusFilter" onchange="loadAdminOrders()" style="padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                <option value="">Tất cả trạng thái</option>
+                                <option value="new" ${statusFilter === 'new' ? 'selected' : ''}>Mới</option>
+                                <option value="processing" ${statusFilter === 'processing' ? 'selected' : ''}>Đang xử lý</option>
+                                <option value="shipping" ${statusFilter === 'shipping' ? 'selected' : ''}>Đang giao</option>
+                                <option value="completed" ${statusFilter === 'completed' ? 'selected' : ''}>Hoàn thành</option>
+                                <option value="cancelled" ${statusFilter === 'cancelled' ? 'selected' : ''}>Đã hủy</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="loadAdminOrders()" title="Làm mới danh sách">🔄 Làm mới</button>
+                            <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                <input type="checkbox" id="autoRefreshOrders" onchange="toggleOrderAutoRefresh()">
+                                <span>Tự động làm mới</span>
+                            </label>
+                        </div>
                     </div>
                 `;
 
