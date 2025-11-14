@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kiểm tra kết nối API - Shop THB</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 30px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .test-section h2 {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .endpoint {
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .endpoint-info {
+            flex: 1;
+        }
+        .endpoint-method {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            margin-right: 10px;
+            font-size: 12px;
+        }
+        .method-get { background: #27ae60; color: white; }
+        .method-post { background: #3498db; color: white; }
+        .method-put { background: #f39c12; color: white; }
+        .method-delete { background: #e74c3c; color: white; }
+        .status {
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .status-pending {
+            background: #95a5a6;
+            color: white;
+        }
+        .status-success {
+            background: #27ae60;
+            color: white;
+        }
+        .status-error {
+            background: #e74c3c;
+            color: white;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        .response {
+            margin-top: 10px;
+            padding: 10px;
+            background: #2c3e50;
+            color: #ecf0f1;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .summary h2 {
+            margin-bottom: 15px;
+        }
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-box {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .stat-box .number {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Kiểm tra kết nối API - Shop THB</h1>
+        
+        <div class="summary">
+            <h2>📊 Tổng quan</h2>
+            <div class="summary-stats">
+                <div class="stat-box">
+                    <div class="number" id="totalTests">0</div>
+                    <div>Tổng số test</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="successTests" style="color: #2ecc71;">0</div>
+                    <div>Thành công</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="errorTests" style="color: #e74c3c;">0</div>
+                    <div>Lỗi</div>
+                </div>
+                <div class="stat-box">
+                    <div class="number" id="pendingTests" style="color: #95a5a6;">0</div>
+                    <div>Đang chờ</div>
+                </div>
+            </div>
+            <button class="btn btn-primary" onclick="runAllTests()" style="margin-top: 20px;">🔄 Chạy tất cả test</button>
+        </div>
+
+        <div class="test-section">
+            <h2>🔐 Authentication APIs</h2>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api</strong> - Test API connection
+                </div>
+                <span class="status status-pending" id="test-api">Chưa test</span>
+            </div>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-post">POST</span>
+                    <strong>/api/auth/login</strong> - Đăng nhập
+                </div>
+                <span class="status status-pending" id="test-auth-login">Chưa test</span>
+            </div>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/auth/me</strong> - Lấy thông tin user (cần token)
+                </div>
+                <span class="status status-pending" id="test-auth-me">Chưa test</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📦 Products APIs</h2>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/products</strong> - Lấy danh sách sản phẩm
+                </div>
+                <span class="status status-pending" id="test-products">Chưa test</span>
+            </div>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/home</strong> - Trang chủ (categories, featured, promotion)
+                </div>
+                <span class="status status-pending" id="test-home">Chưa test</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🗂️ Categories APIs</h2>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/categories</strong> - Lấy danh sách danh mục
+                </div>
+                <span class="status status-pending" id="test-categories">Chưa test</span>
+            </div>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/categories/all</strong> - Lấy tất cả danh mục
+                </div>
+                <span class="status status-pending" id="test-categories-all">Chưa test</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📋 Orders APIs</h2>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/orders</strong> - Lấy danh sách đơn hàng (cần token)
+                </div>
+                <span class="status status-pending" id="test-orders">Chưa test</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>👥 Users APIs (Admin)</h2>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/users</strong> - Lấy danh sách người dùng (cần admin token)
+                </div>
+                <span class="status status-pending" id="test-users">Chưa test</span>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>📊 Dashboard APIs (Admin)</h2>
+            <div class="endpoint">
+                <div class="endpoint-info">
+                    <span class="endpoint-method method-get">GET</span>
+                    <strong>/api/dashboard</strong> - Dashboard tổng quan (cần admin token)
+                </div>
+                <span class="status status-pending" id="test-dashboard">Chưa test</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api';
+        let testResults = {};
+
+        function updateSummary() {
+            const total = Object.keys(testResults).length;
+            const success = Object.values(testResults).filter(r => r === 'success').length;
+            const error = Object.values(testResults).filter(r => r === 'error').length;
+            const pending = Object.values(testResults).filter(r => r === 'pending').length;
+
+            document.getElementById('totalTests').textContent = total;
+            document.getElementById('successTests').textContent = success;
+            document.getElementById('errorTests').textContent = error;
+            document.getElementById('pendingTests').textContent = pending;
+        }
+
+        function updateStatus(id, status, response = null) {
+            const element = document.getElementById(id);
+            element.className = `status status-${status}`;
+            
+            if (status === 'success') {
+                element.textContent = '✅ Thành công';
+                testResults[id] = 'success';
+            } else if (status === 'error') {
+                element.textContent = '❌ Lỗi';
+                testResults[id] = 'error';
+            } else {
+                element.textContent = '⏳ Đang test...';
+                testResults[id] = 'pending';
+            }
+
+            if (response) {
+                const responseDiv = document.createElement('div');
+                responseDiv.className = 'response';
+                responseDiv.textContent = JSON.stringify(response, null, 2);
+                element.parentElement.appendChild(responseDiv);
+            }
+
+            updateSummary();
+        }
+
+        async function testEndpoint(id, method, url, options = {}) {
+            updateStatus(id, 'pending');
+            try {
+                const config = {
+                    method: method,
+                    ...options
+                };
+                const response = await fetch(url, config);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    updateStatus(id, 'success', { status: response.status, data });
+                } else {
+                    updateStatus(id, 'error', { status: response.status, error: data });
+                }
+            } catch (error) {
+                updateStatus(id, 'error', { error: error.message });
+            }
+        }
+
+        async function runAllTests() {
+            // Reset
+            testResults = {};
+            document.querySelectorAll('.response').forEach(el => el.remove());
+
+            // Test API base
+            await testEndpoint('test-api', 'GET', `${API_URL.replace('/api', '')}/api`);
+
+            // Test Products
+            await testEndpoint('test-products', 'GET', `${API_URL}/products?limit=5`);
+            await testEndpoint('test-home', 'GET', `${API_URL}/home`);
+
+            // Test Categories
+            await testEndpoint('test-categories', 'GET', `${API_URL}/categories?limit=5`);
+            await testEndpoint('test-categories-all', 'GET', `${API_URL}/categories/all`);
+
+            // Test Auth (không cần token)
+            await testEndpoint('test-auth-login', 'POST', `${API_URL}/auth/login`, {
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: 'test', password: 'test' })
+            });
+
+            // Test với token (nếu có)
+            const token = localStorage.getItem('token');
+            if (token) {
+                await testEndpoint('test-auth-me', 'GET', `${API_URL}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                await testEndpoint('test-orders', 'GET', `${API_URL}/orders?limit=5`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                await testEndpoint('test-users', 'GET', `${API_URL}/users?limit=5`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                await testEndpoint('test-dashboard', 'GET', `${API_URL}/dashboard`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            } else {
+                updateStatus('test-auth-me', 'error', { error: 'Chưa có token' });
+                updateStatus('test-orders', 'error', { error: 'Chưa có token' });
+                updateStatus('test-users', 'error', { error: 'Chưa có token' });
+                updateStatus('test-dashboard', 'error', { error: 'Chưa có token' });
+            }
+        }
+
+        // Tự động chạy test khi load trang
+        window.onload = () => {
+            runAllTests();
+        };
+    </script>
+</body>
+</html>
+

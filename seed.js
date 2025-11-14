@@ -16,9 +16,9 @@ const seedData = async () => {
     await Category.deleteMany({});
     await Product.deleteMany({});
 
-    // ======== 1️⃣ User (Admin + Nhân viên) ========
+    // ======== 1️⃣ User (Admin + Customer mẫu) ========
     const passwordAdmin = await bcrypt.hash("admin123", 10);
-    const passwordStaff = await bcrypt.hash("staff123", 10);
+    const passwordCustomer = await bcrypt.hash("123456", 10);
 
     const users = await User.insertMany([
       {
@@ -29,14 +29,23 @@ const seedData = async () => {
         role: "admin",
       },
       {
-        username: "nhanvien1",
-        password: passwordStaff,
-        fullName: "Nguyễn Văn B (Nhân viên)",
+        username: "customer1",
+        password: passwordCustomer,
+        email: "customer1@example.com",
+        fullName: "Nguyễn Văn A (Khách hàng)",
         phone: "0912345678",
-        role: "staff",
+        role: "customer",
+      },
+      {
+        username: "customer2",
+        password: passwordCustomer,
+        email: "customer2@example.com",
+        fullName: "Trần Thị B (Khách hàng)",
+        phone: "0923456789",
+        role: "customer",
       },
     ]);
-    console.log("👥 Thêm người dùng mẫu thành công!");
+    console.log("👥 Thêm tài khoản Admin và Customer mẫu thành công!");
 
     // ======== 2️⃣ Category ========
     const categories = await Category.insertMany([

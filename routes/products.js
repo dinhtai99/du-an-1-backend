@@ -136,14 +136,33 @@ router.post("/", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin bắt buộc!" });
     }
 
+    // Validate và parse các giá trị số
+    const parsedImportPrice = parseFloat(importPrice);
+    const parsedPrice = parseFloat(price);
+    
+    if (isNaN(parsedImportPrice) || parsedImportPrice < 0) {
+      return res.status(400).json({ message: "Giá nhập không hợp lệ!" });
+    }
+    if (isNaN(parsedPrice) || parsedPrice < 0) {
+      return res.status(400).json({ message: "Giá bán không hợp lệ!" });
+    }
+
+    const parsedSalePrice = salePrice ? parseFloat(salePrice) : undefined;
+    if (parsedSalePrice !== undefined && (isNaN(parsedSalePrice) || parsedSalePrice < 0)) {
+      return res.status(400).json({ message: "Giá khuyến mãi không hợp lệ!" });
+    }
+
+    const parsedStock = stock ? parseInt(stock) : 0;
+    const parsedMinStock = minStock ? parseInt(minStock) : 10;
+
     const newProduct = new Product({
       name,
       category,
-      importPrice: parseFloat(importPrice),
-      price: parseFloat(price),
-      salePrice: salePrice ? parseFloat(salePrice) : undefined,
-      stock: parseInt(stock) || 0,
-      minStock: parseInt(minStock) || 10,
+      importPrice: parsedImportPrice,
+      price: parsedPrice,
+      salePrice: parsedSalePrice,
+      stock: isNaN(parsedStock) ? 0 : parsedStock,
+      minStock: isNaN(parsedMinStock) ? 10 : parsedMinStock,
       description: description || "",
       images: images || [],
       image: image || (images && images.length > 0 ? images[0] : ""),
@@ -178,14 +197,39 @@ router.put("/:id", verifyToken, async (req, res) => {
 
     if (name) product.name = name;
     if (category) product.category = category;
-    if (importPrice !== undefined) product.importPrice = parseFloat(importPrice);
-    if (price !== undefined) product.price = parseFloat(price);
-    if (stock !== undefined) product.stock = parseInt(stock);
-    if (minStock !== undefined) product.minStock = parseInt(minStock);
+    if (importPrice !== undefined && importPrice !== null && importPrice !== '') {
+      const parsedImportPrice = parseFloat(importPrice);
+      if (!isNaN(parsedImportPrice)) {
+        product.importPrice = parsedImportPrice;
+      }
+    }
+    if (price !== undefined && price !== null && price !== '') {
+      const parsedPrice = parseFloat(price);
+      if (!isNaN(parsedPrice)) {
+        product.price = parsedPrice;
+      }
+    }
+    if (stock !== undefined && stock !== null && stock !== '') {
+      const parsedStock = parseInt(stock);
+      if (!isNaN(parsedStock)) {
+        product.stock = parsedStock;
+      }
+    }
+    if (minStock !== undefined && minStock !== null && minStock !== '') {
+      const parsedMinStock = parseInt(minStock);
+      if (!isNaN(parsedMinStock)) {
+        product.minStock = parsedMinStock;
+      }
+    }
     if (description !== undefined) product.description = description;
     if (images !== undefined) product.images = images;
     if (image !== undefined) product.image = image;
-    if (status !== undefined) product.status = parseInt(status);
+    if (status !== undefined) {
+      const parsedStatus = parseInt(status);
+      if (!isNaN(parsedStatus)) {
+        product.status = parsedStatus;
+      }
+    }
 
     await product.save();
     const updatedProduct = await Product.findById(product._id).populate("category", "name description");

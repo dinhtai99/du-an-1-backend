@@ -26,7 +26,7 @@
         header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 20px 0;
+            padding: 15px 0;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
 
@@ -34,17 +34,31 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
         }
 
         .logo {
             font-size: 24px;
             font-weight: bold;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
 
         .nav-links {
             display: flex;
-            gap: 20px;
+            gap: 15px;
             list-style: none;
+            margin: 0;
+            padding: 0;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .nav-links li {
+            margin: 0;
         }
 
         .nav-links a {
@@ -63,6 +77,12 @@
             display: flex;
             align-items: center;
             gap: 15px;
+            white-space: nowrap;
+            flex-wrap: wrap;
+        }
+
+        .user-info span {
+            white-space: nowrap;
         }
 
         .btn {
@@ -376,9 +396,9 @@
                 <button type="submit" class="btn btn-primary">Đăng nhập</button>
             </form>
             <p style="margin-top: 15px;">
-                <strong>Tài khoản mẫu:</strong><br>
-                Admin: admin / admin123<br>
-                Nhân viên: nhanvien1 / staff123
+                <strong>Tài khoản Admin:</strong><br>
+                Username: admin<br>
+                Password: admin123
             </p>
         </div>
 
@@ -433,6 +453,23 @@
         const API_URL = 'http://localhost:3000/api';
         let token = localStorage.getItem('token');
         let currentUser = null;
+
+        // Kiểm tra kết nối API khi trang load
+        async function testAPIConnection() {
+            try {
+                const response = await fetch(`${API_URL.replace('/api', '')}/api`);
+                const data = await response.json();
+                console.log('✅ API Connection OK:', data);
+                return true;
+            } catch (error) {
+                console.error('❌ API Connection Failed:', error);
+                alert('⚠️ Không thể kết nối đến server API!\nVui lòng kiểm tra:\n1. Server đã chạy chưa? (npm start)\n2. Port 3000 có đang được sử dụng?\n3. URL API: ' + API_URL);
+                return false;
+            }
+        }
+
+        // Test kết nối khi trang load
+        testAPIConnection();
 
         // Check if user is logged in
         if (token) {
@@ -532,31 +569,76 @@
 
         async function loadHome() {
             try {
-                const response = await fetch(`${API_URL}/home`);
-                const data = await response.json();
-                categoriesData = data.categories; // Lưu categories
+                // Load dữ liệu từ API home
+                const homeResponse = await fetch(`${API_URL}/home`);
+                const homeData = await homeResponse.json();
+                categoriesData = homeData.categories; // Lưu categories
                 
-                let html = '<h3>Danh mục sản phẩm</h3><div style="display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap;">';
-                data.categories.forEach(cat => {
-                    html += `<button onclick="filterByCategory('${cat._id}', '${cat.name}')" style="padding: 8px 16px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background='#5568d3'" onmouseout="this.style.background='#667eea'">${cat.name}</button>`;
+                // Load tất cả sản phẩm
+                const productsResponse = await fetch(`${API_URL}/products?limit=20&status=1`);
+                const productsData = await productsResponse.json();
+                
+                let html = `
+                    <div style="margin-bottom: 30px;">
+                        <h2 style="color: #667eea; margin-bottom: 20px;">🏠 Trang chủ</h2>
+                        <h3 style="margin-bottom: 15px;">Danh mục sản phẩm</h3>
+                        <div style="display: flex; gap: 10px; margin-bottom: 30px; flex-wrap: wrap;">
+                `;
+                
+                homeData.categories.forEach(cat => {
+                    html += `<button onclick="filterByCategory('${cat._id}', '${cat.name}')" style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.3s; box-shadow: 0 2px 5px rgba(0,0,0,0.1);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 10px rgba(0,0,0,0.2)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 5px rgba(0,0,0,0.1)'">${cat.name}</button>`;
                 });
-                html += '</div>';
+                html += '</div></div>';
 
-                html += '<h3>Sản phẩm nổi bật</h3><div class="product-grid">';
-                data.featuredProducts.forEach(product => {
+                // Tất cả sản phẩm
+                html += `
+                    <div style="margin-bottom: 40px;">
+                        <h3 style="color: #333; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #667eea;">📦 Tất cả sản phẩm</h3>
+                        <div class="product-grid">
+                `;
+                if (productsData.products && productsData.products.length > 0) {
+                    productsData.products.forEach(product => {
                     html += createProductCard(product);
                 });
-                html += '</div>';
+                } else {
+                    html += '<p style="text-align: center; padding: 40px; color: #999;">Chưa có sản phẩm nào!</p>';
+                }
+                html += '</div></div>';
 
-                html += '<h3 style="margin-top: 30px;">Sản phẩm khuyến mãi</h3><div class="product-grid">';
-                data.promotionProducts.forEach(product => {
+                // Sản phẩm nổi bật
+                html += `
+                    <div style="margin-bottom: 40px;">
+                        <h3 style="color: #333; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #f39c12;">⭐ Sản phẩm nổi bật</h3>
+                        <div class="product-grid">
+                `;
+                if (homeData.featuredProducts && homeData.featuredProducts.length > 0) {
+                    homeData.featuredProducts.forEach(product => {
                     html += createProductCard(product);
                 });
-                html += '</div>';
+                } else {
+                    html += '<p style="text-align: center; padding: 40px; color: #999;">Chưa có sản phẩm nổi bật!</p>';
+                }
+                html += '</div></div>';
+
+                // Sản phẩm khuyến mãi
+                html += `
+                    <div style="margin-bottom: 40px;">
+                        <h3 style="color: #333; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #e74c3c;">🔥 Sản phẩm khuyến mãi</h3>
+                        <div class="product-grid">
+                `;
+                if (homeData.promotionProducts && homeData.promotionProducts.length > 0) {
+                    homeData.promotionProducts.forEach(product => {
+                        html += createProductCard(product);
+                    });
+                } else {
+                    html += '<p style="text-align: center; padding: 40px; color: #999;">Chưa có sản phẩm khuyến mãi!</p>';
+                }
+                html += '</div></div>';
 
                 document.getElementById('homeContent').innerHTML = html;
             } catch (error) {
-                document.getElementById('homeContent').innerHTML = 'Lỗi tải dữ liệu!';
+                console.error('Load home error:', error);
+                document.getElementById('homeContent').innerHTML = '<p style="color: red;">Lỗi tải dữ liệu!</p>';
             }
         }
 
@@ -1351,17 +1433,17 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Giá nhập *</label>
-                                    <input type="number" id="productImportPrice" value="${product?.importPrice || ''}" min="0" required>
+                                    <input type="number" id="productImportPrice" value="${product?.importPrice || ''}" min="0" step="1" required>
                                 </div>
                                 <div class="form-group">
                                     <label>Giá bán *</label>
-                                    <input type="number" id="productPrice" value="${product?.price || ''}" min="0" required>
+                                    <input type="number" id="productPrice" value="${product?.price || ''}" min="0" step="1" required>
                                 </div>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Giá khuyến mãi</label>
-                                    <input type="number" id="productSalePrice" value="${product?.salePrice || ''}" min="0">
+                                    <input type="number" id="productSalePrice" value="${product?.salePrice || ''}" min="0" step="1">
                                 </div>
                                 <div class="form-group">
                                     <label>Trạng thái</label>
@@ -1374,11 +1456,11 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Số lượng tồn kho</label>
-                                    <input type="number" id="productStock" value="${product?.stock || 0}" min="0">
+                                    <input type="number" id="productStock" value="${product?.stock || 0}" min="0" step="1">
                                 </div>
                                 <div class="form-group">
                                     <label>Số lượng tối thiểu</label>
-                                    <input type="number" id="productMinStock" value="${product?.minStock || 10}" min="0">
+                                    <input type="number" id="productMinStock" value="${product?.minStock || 10}" min="0" step="1">
                                 </div>
                             </div>
                             <div class="form-group">
@@ -1406,16 +1488,84 @@
 
         async function saveProduct(event, productId) {
             event.preventDefault();
+            
+            // Validate và parse các giá trị số
+            const importPriceInput = document.getElementById('productImportPrice');
+            const priceInput = document.getElementById('productPrice');
+            const salePriceInput = document.getElementById('productSalePrice');
+            const stockInput = document.getElementById('productStock');
+            const minStockInput = document.getElementById('productMinStock');
+            
+            if (!importPriceInput || !priceInput) {
+                alert('Lỗi: Không tìm thấy các trường bắt buộc!');
+                return;
+            }
+            
+            // Lấy giá trị - input type="number" trả về string hoặc rỗng
+            let importPriceValue = importPriceInput.value;
+            let priceValue = priceInput.value;
+            const salePriceValue = salePriceInput ? salePriceInput.value : '';
+            const stockValue = stockInput ? stockInput.value : '';
+            const minStockValue = minStockInput ? minStockInput.value : '';
+            
+            // Chuyển đổi sang string và loại bỏ khoảng trắng, dấu phẩy
+            importPriceValue = String(importPriceValue || '').trim().replace(/,/g, '');
+            priceValue = String(priceValue || '').trim().replace(/,/g, '');
+            
+            // Kiểm tra giá trị bắt buộc - chỉ kiểm tra rỗng hoặc NaN
+            if (!importPriceValue || importPriceValue === '') {
+                alert('Vui lòng nhập giá nhập!');
+                importPriceInput.focus();
+                return;
+            }
+            
+            const parsedImportPrice = Number(importPriceValue);
+            if (isNaN(parsedImportPrice)) {
+                alert('Giá nhập phải là số hợp lệ!');
+                importPriceInput.focus();
+                return;
+            }
+            
+            if (parsedImportPrice < 0) {
+                alert('Giá nhập phải lớn hơn hoặc bằng 0!');
+                importPriceInput.focus();
+                return;
+            }
+            
+            if (!priceValue || priceValue === '') {
+                alert('Vui lòng nhập giá bán!');
+                priceInput.focus();
+                return;
+            }
+            
+            const parsedPrice = Number(priceValue);
+            if (isNaN(parsedPrice)) {
+                alert('Giá bán phải là số hợp lệ!');
+                priceInput.focus();
+                return;
+            }
+            
+            if (parsedPrice < 0) {
+                alert('Giá bán phải lớn hơn hoặc bằng 0!');
+                priceInput.focus();
+                return;
+            }
+            
+            // Parse các giá trị tùy chọn
+            const parsedSalePrice = salePriceValue && !isNaN(Number(salePriceValue)) && Number(salePriceValue) >= 0 ? Number(salePriceValue) : undefined;
+            const parsedStock = stockValue && !isNaN(Number(stockValue)) && Number(stockValue) >= 0 ? Number(stockValue) : 0;
+            const parsedMinStock = minStockValue && !isNaN(Number(minStockValue)) && Number(minStockValue) >= 0 ? Number(minStockValue) : 10;
+            
             const formData = {
-                name: document.getElementById('productName').value,
+                name: document.getElementById('productName').value.trim(),
                 category: document.getElementById('productCategory').value,
-                importPrice: document.getElementById('productImportPrice').value,
-                price: document.getElementById('productPrice').value,
-                salePrice: document.getElementById('productSalePrice').value || undefined,
-                stock: document.getElementById('productStock').value || 0,
-                minStock: document.getElementById('productMinStock').value || 10,
-                description: document.getElementById('productDescription').value,
-                image: document.getElementById('productImage').value,
+                importPrice: parsedImportPrice,
+                price: parsedPrice,
+                salePrice: parsedSalePrice,
+                stock: parsedStock,
+                minStock: parsedMinStock,
+                description: document.getElementById('productDescription').value.trim(),
+                image: document.getElementById('productImage').value.trim(),
                 status: parseInt(document.getElementById('productStatus').value)
             };
 

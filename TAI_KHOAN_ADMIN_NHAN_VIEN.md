@@ -1,8 +1,8 @@
-# Tài khoản Admin và Nhân viên
+# Tài khoản Admin
 
 ## 📋 Thông tin đăng nhập mặc định
 
-Sau khi chạy file `seed.js`, hệ thống sẽ tạo 2 tài khoản mẫu:
+Sau khi chạy file `seed.js`, hệ thống sẽ tạo 1 tài khoản Admin:
 
 ### 👑 Tài khoản Admin:
 - **Username:** `admin`
@@ -11,12 +11,7 @@ Sau khi chạy file `seed.js`, hệ thống sẽ tạo 2 tài khoản mẫu:
 - **Số điện thoại:** 0987654321
 - **Role:** admin
 
-### 👤 Tài khoản Nhân viên:
-- **Username:** `nhanvien1`
-- **Password:** `staff123`
-- **Họ tên:** Nguyễn Văn B (Nhân viên)
-- **Số điện thoại:** 0912345678
-- **Role:** staff
+**Lưu ý:** Hệ thống chỉ có Admin (quản lý web) và Customer (dùng Android). Không có nhân viên (staff).
 
 ---
 
