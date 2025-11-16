@@ -6,7 +6,8 @@ const Product = require("../models/Product");
 const Voucher = require("../models/Voucher");
 const Notification = require("../models/Notification");
 const zalopayService = require("../services/zalopayService");
-const { verifyToken } = require("../middleware/authMiddleware");
+const momoService = require("../services/momoService");
+const { verifyToken, requireCustomer } = require("../middleware/authMiddleware");
 
 /**
  * POST /api/payment/zalopay/create
@@ -454,5 +455,491 @@ router.get("/zalopay/status/:orderId", verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/payment/momo/create
+ * Tạo đơn hàng và gọi MoMo API để tạo payment order
+ */
+router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
+  try {
+    const { shippingAddress, notes, voucherCode, orderId, items } = req.body;
+
+    let order;
+    let cart = null;
+
+    // Nếu có orderId, lấy đơn hàng đã tạo (cho trường hợp tạo order trước)
+    if (orderId) {
+      order = await Order.findById(orderId);
+      if (!order) {
+        return res.status(404).json({ message: "Không tìm thấy đơn hàng!" });
+      }
+      if (order.customer.toString() !== req.user.userId) {
+        return res.status(403).json({ message: "Không có quyền truy cập đơn hàng này!" });
+      }
+      if (order.paymentMethod !== "momo") {
+        return res.status(400).json({ message: "Đơn hàng không phải thanh toán MoMo!" });
+      }
+    } else {
+      // Tạo đơn hàng mới từ giỏ hàng
+      if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
+        return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng!" });
+      }
+
+      // Lấy giỏ hàng
+      let cartItems = [];
+
+      if (items && items.length > 0) {
+        // Nếu có items trong request body (từ mobile app)
+        console.log("📦 Using items from request body:", items.length, "items");
+        cartItems = items;
+        
+        // Populate product info cho từng item
+        for (const item of cartItems) {
+          const product = item.product;
+          const quantity = item.quantity;
+          const price = item.price || (product.salePrice || product.price);
+          if (!product) {
+            return res.status(400).json({ message: `Sản phẩm ${item.product} không tồn tại!` });
+          }
+          item.product = product;
+        }
+      } else {
+        // Nếu không có items trong request, lấy từ database (web app)
+        console.log("📦 Loading cart from database");
+        cart = await Cart.findOne({ user: req.user.userId }).populate("items.product");
+        if (!cart || cart.items.length === 0) {
+          return res.status(400).json({ message: "Giỏ hàng trống!" });
+        }
+        cartItems = cart.items.map(item => ({
+          product: item.product,
+          quantity: item.quantity,
+          color: item.color || "",
+          size: item.size || "",
+          price: item.product.salePrice || item.product.price
+        }));
+      }
+
+      // Kiểm tra tồn kho và tính toán
+      let subtotal = 0;
+      const orderItems = [];
+      const productIds = [];
+
+      for (const item of cartItems) {
+        const product = item.product;
+        const quantity = item.quantity;
+        const price = item.price;
+        
+        if (product.status === 0) {
+          return res.status(400).json({ message: `Sản phẩm ${product.name} đã bị ẩn!` });
+        }
+
+        if (product.stock < quantity) {
+          return res.status(400).json({ 
+            message: `Sản phẩm ${product.name} chỉ còn ${product.stock} sản phẩm trong kho!` 
+          });
+        }
+
+        const itemSubtotal = price * quantity;
+
+        orderItems.push({
+          product: product._id,
+          quantity: quantity,
+          color: item.color || "",
+          size: item.size || "",
+          price,
+          discount: 0,
+          subtotal: itemSubtotal,
+        });
+
+        subtotal += itemSubtotal;
+        productIds.push(product._id);
+      }
+
+      // Tính phí vận chuyển
+      const shippingFee = 30000; // Mặc định 30k
+
+      // Xử lý voucher nếu có
+      let voucher = null;
+      let voucherDiscount = 0;
+      let voucherCodeUsed = null;
+
+      if (voucherCode) {
+        voucher = await Voucher.findOne({ code: voucherCode.toUpperCase() })
+          .populate("applicableProducts", "name category")
+          .populate("applicableCategories", "name");
+
+        if (!voucher) {
+          return res.status(400).json({ message: "Mã voucher không tồn tại!" });
+        }
+
+        // Kiểm tra voucher hợp lệ
+        const now = new Date();
+        if (voucher.status === 0) {
+          return res.status(400).json({ message: "Voucher đã bị vô hiệu hóa!" });
+        }
+        if (voucher.usedCount >= voucher.quantity) {
+          return res.status(400).json({ message: "Voucher đã hết lượt sử dụng!" });
+        }
+        if (now < voucher.startDate || now > voucher.endDate) {
+          return res.status(400).json({ message: "Voucher không còn hiệu lực!" });
+        }
+        if (subtotal < voucher.minOrderValue) {
+          return res.status(400).json({ 
+            message: `Đơn hàng tối thiểu ${voucher.minOrderValue.toLocaleString()} VNĐ để sử dụng voucher này!` 
+          });
+        }
+
+        // Kiểm tra user được áp dụng
+        if (voucher.applicableUsers.length > 0) {
+          const isApplicable = voucher.applicableUsers.some(
+            id => id.toString() === req.user.userId.toString()
+          );
+          if (!isApplicable) {
+            return res.status(400).json({ message: "Bạn không được sử dụng voucher này!" });
+          }
+        }
+
+        // Kiểm tra sản phẩm áp dụng
+        if (voucher.applicableProducts.length > 0) {
+          const applicable = productIds.some(productId => 
+            voucher.applicableProducts.some(p => p._id.toString() === productId.toString())
+          );
+          if (!applicable) {
+            return res.status(400).json({ message: "Voucher không áp dụng cho sản phẩm trong giỏ hàng!" });
+          }
+        }
+
+        // Tính toán giảm giá
+        if (voucher.type === "percentage") {
+          voucherDiscount = (subtotal * voucher.value) / 100;
+          if (voucher.maxDiscount && voucherDiscount > voucher.maxDiscount) {
+            voucherDiscount = voucher.maxDiscount;
+          }
+        } else {
+          voucherDiscount = voucher.value;
+        }
+
+        voucherCodeUsed = voucher.code;
+      }
+
+      // Tính tổng tiền cuối cùng
+      const total = subtotal + shippingFee - voucherDiscount;
+
+      // Tạo đơn hàng với paymentMethod = "momo" và paymentStatus = "pending"
+      order = new Order({
+        customer: req.user.userId,
+        shippingAddress,
+        items: orderItems,
+        subtotal,
+        shippingFee,
+        discount: 0,
+        voucher: voucher ? voucher._id : null,
+        voucherCode: voucherCodeUsed,
+        voucherDiscount,
+        total: total > 0 ? total : 0,
+        paymentMethod: "momo",
+        paymentStatus: "pending",
+        status: "new",
+        notes: notes || "",
+        timeline: [{
+          status: "new",
+          message: "Đơn hàng đã được tạo, chờ thanh toán MoMo",
+          updatedBy: req.user.userId,
+        }],
+      });
+
+      await order.save();
+
+      // Tăng số lần sử dụng voucher (nhưng chưa trừ tồn kho vì chưa thanh toán)
+      if (voucher) {
+        voucher.usedCount += 1;
+        await voucher.save();
+      }
+    }
+
+    // Tạo orderId cho MoMo
+    const momoOrderId = momoService.generateOrderId(order._id);
+
+    // Chuẩn bị thông tin items cho MoMo (JSON string trong extraData)
+    const extraData = {
+      orderId: order._id.toString(),
+      orderNumber: order.orderNumber,
+      items: order.items.map((item, index) => ({
+        id: index + 1,
+        name: `Sản phẩm ${index + 1}`,
+        price: item.price,
+        quantity: item.quantity,
+      })),
+    };
+
+    // Gọi MoMo API để tạo payment order
+    const momoResult = await momoService.createOrder({
+      orderId: momoOrderId,
+      amount: order.total,
+      orderInfo: `Thanh toán đơn hàng ${order.orderNumber}`,
+      extraData: JSON.stringify(extraData),
+    });
+
+    if (!momoResult.success) {
+      return res.status(400).json({
+        message: "Không thể tạo đơn hàng thanh toán MoMo!",
+        error: momoResult.message,
+      });
+    }
+
+    // Lưu thông tin MoMo vào order
+    order.momoOrderId = momoOrderId;
+    order.momoRequestId = momoResult.requestId;
+    order.paymentStatus = "processing";
+    await order.save();
+
+    // Cập nhật timeline
+    if (!order.timeline) {
+      order.timeline = [];
+    }
+    order.timeline.push({
+      status: "new",
+      message: "Đã tạo yêu cầu thanh toán MoMo",
+      updatedBy: req.user.userId,
+    });
+    await order.save();
+
+    // Trả về payUrl để client redirect
+    res.json({
+      success: true,
+      message: "Tạo đơn hàng thanh toán MoMo thành công!",
+      payUrl: momoResult.payUrl,
+      deeplink: momoResult.deeplink,
+      qrCodeUrl: momoResult.qrCodeUrl,
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      momoOrderId: momoOrderId,
+    });
+  } catch (error) {
+    console.error("Create MoMo payment error:", error);
+    res.status(500).json({ message: "Lỗi server!", error: error.message });
+  }
+});
+
+/**
+ * POST /api/payment/momo/callback
+ * Webhook callback từ MoMo khi thanh toán hoàn tất
+ */
+router.post("/momo/callback", async (req, res) => {
+  try {
+    const callbackData = req.body;
+
+    if (!callbackData || !callbackData.signature) {
+      return res.status(400).json({ 
+        resultCode: -1, 
+        message: "Thiếu dữ liệu!" 
+      });
+    }
+
+    // Xác thực signature
+    const isValid = momoService.verifyCallback(callbackData);
+    if (!isValid) {
+      console.error("MoMo callback signature invalid:", callbackData);
+      return res.status(400).json({ 
+        resultCode: -1, 
+        message: "Signature không hợp lệ!" 
+      });
+    }
+
+    // Parse extraData để lấy orderId
+    let orderId = null;
+    try {
+      const extraData = JSON.parse(callbackData.extraData || "{}");
+      orderId = extraData.orderId;
+    } catch (e) {
+      console.error("Parse extraData error:", e);
+    }
+
+    // Nếu không có orderId trong extraData, thử tìm theo momoOrderId
+    if (!orderId && callbackData.orderId) {
+      const order = await Order.findOne({ momoOrderId: callbackData.orderId });
+      if (order) {
+        orderId = order._id.toString();
+      }
+    }
+
+    if (!orderId) {
+      console.error("Cannot find orderId from callback:", callbackData);
+      return res.status(400).json({ 
+        resultCode: -1, 
+        message: "Không tìm thấy đơn hàng!" 
+      });
+    }
+
+    // Tìm đơn hàng
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ 
+        resultCode: -1, 
+        message: "Không tìm thấy đơn hàng!" 
+      });
+    }
+
+    // Kiểm tra nếu đã xử lý callback này rồi (idempotency)
+    if (order.paymentStatus === "success" && order.status !== "new") {
+      return res.json({ resultCode: 0, message: "OK" });
+    }
+
+    // Xử lý kết quả thanh toán
+    if (callbackData.resultCode === 0) {
+      // Thanh toán thành công
+      order.paymentStatus = "success";
+      order.momoTransId = callbackData.transId;
+      order.momoSignature = callbackData.signature;
+      
+      // Cập nhật timeline
+      if (!order.timeline) {
+        order.timeline = [];
+      }
+      order.timeline.push({
+        status: "processing",
+        message: "Thanh toán MoMo thành công",
+        updatedBy: order.customer,
+      });
+      await order.save();
+
+      // Trừ tồn kho
+      for (const item of order.items) {
+        const product = await Product.findById(item.product);
+        if (product && product.stock >= item.quantity) {
+          await Product.findByIdAndUpdate(item.product, {
+            $inc: { stock: -item.quantity },
+          });
+        }
+      }
+
+      // Tạo thông báo
+      await Notification.create({
+        user: order.customer,
+        type: "order",
+        title: "Thanh toán thành công",
+        message: `Đơn hàng ${order.orderNumber} đã được thanh toán thành công qua MoMo!`,
+        link: `/orders/${order._id}`,
+      });
+
+      // Xóa giỏ hàng nếu có
+      const cart = await Cart.findOne({ user: order.customer });
+      if (cart) {
+        cart.items = [];
+        await cart.save();
+      }
+    } else {
+      // Thanh toán thất bại
+      order.paymentStatus = "failed";
+      
+      if (!order.timeline) {
+        order.timeline = [];
+      }
+      order.timeline.push({
+        status: "new",
+        message: `Thanh toán MoMo thất bại: ${callbackData.message || "Lỗi không xác định"}`,
+        updatedBy: order.customer,
+      });
+      await order.save();
+
+      // Hoàn lại voucher đã sử dụng
+      if (order.voucher) {
+        const voucher = await Voucher.findById(order.voucher);
+        if (voucher) {
+          voucher.usedCount = Math.max(0, voucher.usedCount - 1);
+          await voucher.save();
+        }
+      }
+    }
+
+    // Trả về success cho MoMo
+    res.json({ resultCode: 0, message: "OK" });
+  } catch (error) {
+    console.error("MoMo callback error:", error);
+    res.status(500).json({ resultCode: -1, message: "Lỗi server!" });
+  }
+});
+
+/**
+ * GET /api/payment/momo/return
+ * Return URL sau khi thanh toán (redirect từ MoMo)
+ */
+router.get("/momo/return", async (req, res) => {
+  try {
+    const { orderId, resultCode, message } = req.query;
+
+    if (!orderId) {
+      return res.redirect("/?payment=error&message=Thiếu thông tin đơn hàng");
+    }
+
+    // Tìm đơn hàng
+    const order = await Order.findOne({ momoOrderId: orderId });
+    if (!order) {
+      return res.redirect("/?payment=error&message=Không tìm thấy đơn hàng");
+    }
+
+    if (resultCode === "0") {
+      // Thanh toán thành công - query lại từ MoMo để đảm bảo
+      const queryResult = await momoService.queryOrder(orderId);
+      if (queryResult.success && queryResult.data?.resultCode === 0) {
+        return res.redirect(`/?payment=success&orderId=${order._id}`);
+      }
+    }
+
+    return res.redirect(`/?payment=failed&orderId=${order._id}&message=${encodeURIComponent(message || "Thanh toán thất bại")}`);
+  } catch (error) {
+    console.error("MoMo return error:", error);
+    return res.redirect("/?payment=error&message=Lỗi xử lý");
+  }
+});
+
+/**
+ * GET /api/payment/momo/status/:orderId
+ * Kiểm tra trạng thái thanh toán của đơn hàng
+ */
+router.get("/momo/status/:orderId", verifyToken, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+
+    if (!order) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng!" });
+    }
+
+    // Customer chỉ xem đơn hàng của mình
+    if (req.user.role === "customer" && order.customer.toString() !== req.user.userId) {
+      return res.status(403).json({ message: "Không có quyền xem đơn hàng này!" });
+    }
+
+    // Nếu có momoOrderId, query từ MoMo để lấy trạng thái mới nhất
+    if (order.momoOrderId && order.paymentStatus === "processing") {
+      const queryResult = await momoService.queryOrder(order.momoOrderId);
+      if (queryResult.success && queryResult.data) {
+        // Cập nhật payment status nếu có thay đổi
+        if (queryResult.data.resultCode === 0 && queryResult.data.amount === order.total) {
+          if (order.paymentStatus !== "success") {
+            order.paymentStatus = "success";
+            order.momoTransId = queryResult.data.transId;
+            await order.save();
+          }
+        }
+      }
+    }
+
+    res.json({
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      paymentMethod: order.paymentMethod,
+      paymentStatus: order.paymentStatus,
+      status: order.status,
+      total: order.total,
+      momoOrderId: order.momoOrderId,
+      momoTransId: order.momoTransId,
+    });
+  } catch (error) {
+    console.error("Check MoMo payment status error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
 module.exports = router;
+
 

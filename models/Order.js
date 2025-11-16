@@ -28,10 +28,10 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true }, // Tổng tiền cuối cùng
   paymentMethod: { 
     type: String, 
-    enum: ["COD", "card", "e-wallet", "zalopay"], 
+    enum: ["COD", "card", "e-wallet", "zalopay", "momo"], 
     default: "COD",
     required: true 
-  }, // COD / Thẻ / Ví điện tử / ZaloPay
+  }, // COD / Thẻ / Ví điện tử / ZaloPay / MoMo
   paymentStatus: {
     type: String,
     enum: ["pending", "processing", "success", "failed", "cancelled"],
@@ -40,6 +40,10 @@ const orderSchema = new mongoose.Schema({
   zalopayTransToken: { type: String }, // ZaloPay transaction token (zp_trans_token)
   zalopayOrderId: { type: String }, // ZaloPay order ID
   zalopayMac: { type: String }, // ZaloPay MAC for verification
+  momoOrderId: { type: String }, // MoMo order ID
+  momoRequestId: { type: String }, // MoMo request ID
+  momoTransId: { type: String }, // MoMo transaction ID
+  momoSignature: { type: String }, // MoMo signature for verification
   status: { 
     type: String, 
     enum: ["new", "processing", "shipping", "completed", "cancelled"], 

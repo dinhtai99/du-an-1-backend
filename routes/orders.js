@@ -244,6 +244,14 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
       });
     }
 
+    // Nếu là MoMo, redirect đến payment endpoint
+    if (finalPaymentMethod === "momo") {
+      return res.status(400).json({ 
+        message: "Vui lòng sử dụng endpoint /api/payment/momo/create để thanh toán MoMo!",
+        redirectTo: "/api/payment/momo/create"
+      });
+    }
+
     // Tạo đơn hàng
     const order = new Order({
       customer: req.user.userId,
