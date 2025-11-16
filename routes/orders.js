@@ -5,7 +5,7 @@ const Cart = require("../models/Cart");
 const Product = require("../models/Product");
 const Voucher = require("../models/Voucher");
 const Notification = require("../models/Notification");
-const { verifyToken, requireAdmin, requireAdminOrStaff } = require("../middleware/authMiddleware");
+const { verifyToken, requireAdmin, requireAdminOrStaff, requireCustomer } = require("../middleware/authMiddleware");
 
 // 📦 Lấy danh sách đơn hàng (Admin/Staff: tất cả, Customer: chỉ của mình)
 router.get("/", verifyToken, async (req, res) => {
@@ -114,8 +114,8 @@ router.get("/:id/timeline", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Tạo đơn hàng từ giỏ hàng
-router.post("/", verifyToken, async (req, res) => {
+// ➕ Tạo đơn hàng từ giỏ hàng (chỉ customer)
+router.post("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { shippingAddress, paymentMethod, notes, voucherCode } = req.body;
 
@@ -393,8 +393,8 @@ router.put("/:id/status", verifyToken, requireAdminOrStaff, async (req, res) => 
   }
 });
 
-// ❌ Hủy đơn hàng (Customer)
-router.put("/:id/cancel", verifyToken, async (req, res) => {
+// ❌ Hủy đơn hàng (chỉ customer)
+router.put("/:id/cancel", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { reason } = req.body;
     const order = await Order.findById(req.params.id);

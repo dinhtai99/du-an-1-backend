@@ -2,10 +2,10 @@ const express = require("express");
 const router = express.Router();
 const Cart = require("../models/Cart");
 const Product = require("../models/Product");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, requireCustomer } = require("../middleware/authMiddleware");
 
-// 🛒 Lấy giỏ hàng
-router.get("/", verifyToken, async (req, res) => {
+// 🛒 Lấy giỏ hàng (chỉ customer)
+router.get("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     let cart = await Cart.findOne({ user: req.user.userId }).populate("items.product");
     
@@ -30,8 +30,8 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Thêm sản phẩm vào giỏ hàng
-router.post("/", verifyToken, async (req, res) => {
+// ➕ Thêm sản phẩm vào giỏ hàng (chỉ customer)
+router.post("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { productId, quantity, color, size } = req.body;
 
@@ -91,8 +91,8 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
-// ✏️ Cập nhật số lượng sản phẩm trong giỏ
-router.put("/:itemId", verifyToken, async (req, res) => {
+// ✏️ Cập nhật số lượng sản phẩm trong giỏ (chỉ customer)
+router.put("/:itemId", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { quantity } = req.body;
     const cart = await Cart.findOne({ user: req.user.userId });
@@ -129,8 +129,8 @@ router.put("/:itemId", verifyToken, async (req, res) => {
   }
 });
 
-// 🗑️ Xóa sản phẩm khỏi giỏ
-router.delete("/:itemId", verifyToken, async (req, res) => {
+// 🗑️ Xóa sản phẩm khỏi giỏ (chỉ customer)
+router.delete("/:itemId", verifyToken, requireCustomer, async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.user.userId });
 
@@ -152,8 +152,8 @@ router.delete("/:itemId", verifyToken, async (req, res) => {
   }
 });
 
-// 🗑️ Xóa toàn bộ giỏ hàng
-router.delete("/", verifyToken, async (req, res) => {
+// 🗑️ Xóa toàn bộ giỏ hàng (chỉ customer)
+router.delete("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const cart = await Cart.findOne({ user: req.user.userId });
     

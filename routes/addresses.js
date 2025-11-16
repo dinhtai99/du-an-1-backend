@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const Address = require("../models/Address");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, requireCustomer } = require("../middleware/authMiddleware");
 
-// 📍 Lấy danh sách địa chỉ
-router.get("/", verifyToken, async (req, res) => {
+// 📍 Lấy danh sách địa chỉ (chỉ customer)
+router.get("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const addresses = await Address.find({ user: req.user.userId }).sort({ isDefault: -1, createdAt: -1 });
     res.json(addresses);
@@ -14,8 +14,8 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-// 📍 Lấy địa chỉ mặc định
-router.get("/default", verifyToken, async (req, res) => {
+// 📍 Lấy địa chỉ mặc định (chỉ customer)
+router.get("/default", verifyToken, requireCustomer, async (req, res) => {
   try {
     const address = await Address.findOne({ user: req.user.userId, isDefault: true });
     res.json(address || null);
@@ -25,8 +25,8 @@ router.get("/default", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Thêm địa chỉ mới
-router.post("/", verifyToken, async (req, res) => {
+// ➕ Thêm địa chỉ mới (chỉ customer)
+router.post("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { fullName, phone, address, ward, district, city, isDefault } = req.body;
 
@@ -64,8 +64,8 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
-// ✏️ Cập nhật địa chỉ
-router.put("/:id", verifyToken, async (req, res) => {
+// ✏️ Cập nhật địa chỉ (chỉ customer)
+router.put("/:id", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { fullName, phone, address, ward, district, city, isDefault } = req.body;
     const addressDoc = await Address.findOne({ _id: req.params.id, user: req.user.userId });
@@ -103,8 +103,8 @@ router.put("/:id", verifyToken, async (req, res) => {
   }
 });
 
-// 🗑️ Xóa địa chỉ
-router.delete("/:id", verifyToken, async (req, res) => {
+// 🗑️ Xóa địa chỉ (chỉ customer)
+router.delete("/:id", verifyToken, requireCustomer, async (req, res) => {
   try {
     const address = await Address.findOneAndDelete({ _id: req.params.id, user: req.user.userId });
     

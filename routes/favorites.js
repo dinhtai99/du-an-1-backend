@@ -2,10 +2,10 @@ const express = require("express");
 const router = express.Router();
 const Favorite = require("../models/Favorite");
 const Product = require("../models/Product");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, requireCustomer } = require("../middleware/authMiddleware");
 
-// ❤️ Lấy danh sách sản phẩm yêu thích
-router.get("/", verifyToken, async (req, res) => {
+// ❤️ Lấy danh sách sản phẩm yêu thích (chỉ customer)
+router.get("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const favorites = await Favorite.find({ user: req.user.userId })
       .populate("product")
@@ -18,8 +18,8 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-// ❤️ Kiểm tra sản phẩm đã yêu thích chưa
-router.get("/check/:productId", verifyToken, async (req, res) => {
+// ❤️ Kiểm tra sản phẩm đã yêu thích chưa (chỉ customer)
+router.get("/check/:productId", verifyToken, requireCustomer, async (req, res) => {
   try {
     const favorite = await Favorite.findOne({
       user: req.user.userId,
@@ -33,8 +33,8 @@ router.get("/check/:productId", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Thêm vào yêu thích
-router.post("/:productId", verifyToken, async (req, res) => {
+// ➕ Thêm vào yêu thích (chỉ customer)
+router.post("/:productId", verifyToken, requireCustomer, async (req, res) => {
   try {
     const product = await Product.findById(req.params.productId);
     if (!product) {
@@ -71,8 +71,8 @@ router.post("/:productId", verifyToken, async (req, res) => {
   }
 });
 
-// 🗑️ Xóa khỏi yêu thích
-router.delete("/:productId", verifyToken, async (req, res) => {
+// 🗑️ Xóa khỏi yêu thích (chỉ customer)
+router.delete("/:productId", verifyToken, requireCustomer, async (req, res) => {
   try {
     const favorite = await Favorite.findOneAndDelete({
       user: req.user.userId,

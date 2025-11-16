@@ -46,6 +46,11 @@ app.get("/", (req, res) => {
   res.sendFile(__dirname + '/public/index.html');
 });
 
+// Serve admin page
+app.get("/admin", (req, res) => {
+  res.sendFile(__dirname + '/public/admin.html');
+});
+
 
 // Import routes
 const authRoutes = require("./routes/auth");

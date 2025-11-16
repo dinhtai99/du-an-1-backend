@@ -3,7 +3,7 @@ const router = express.Router();
 const Review = require("../models/Review");
 const Product = require("../models/Product");
 const Order = require("../models/Order");
-const { verifyToken } = require("../middleware/authMiddleware");
+const { verifyToken, requireCustomer } = require("../middleware/authMiddleware");
 
 // ⭐ Lấy đánh giá của sản phẩm
 router.get("/product/:productId", async (req, res) => {
@@ -32,8 +32,8 @@ router.get("/product/:productId", async (req, res) => {
   }
 });
 
-// ⭐ Lấy đánh giá của user
-router.get("/my", verifyToken, async (req, res) => {
+// ⭐ Lấy đánh giá của user (chỉ customer)
+router.get("/my", verifyToken, requireCustomer, async (req, res) => {
   try {
     const reviews = await Review.find({ user: req.user.userId })
       .populate("product", "name image price")
@@ -46,8 +46,8 @@ router.get("/my", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Thêm đánh giá (chỉ user đã mua sản phẩm)
-router.post("/", verifyToken, async (req, res) => {
+// ➕ Thêm đánh giá (chỉ customer đã mua sản phẩm)
+router.post("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { productId, orderId, rating, comment, images } = req.body;
 
@@ -119,8 +119,8 @@ router.post("/", verifyToken, async (req, res) => {
   }
 });
 
-// ✏️ Cập nhật đánh giá
-router.put("/:id", verifyToken, async (req, res) => {
+// ✏️ Cập nhật đánh giá (chỉ customer)
+router.put("/:id", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { rating, comment, images } = req.body;
     const review = await Review.findOne({ _id: req.params.id, user: req.user.userId });
@@ -162,8 +162,8 @@ router.put("/:id", verifyToken, async (req, res) => {
   }
 });
 
-// 🗑️ Xóa đánh giá
-router.delete("/:id", verifyToken, async (req, res) => {
+// 🗑️ Xóa đánh giá (chỉ customer)
+router.delete("/:id", verifyToken, requireCustomer, async (req, res) => {
   try {
     const review = await Review.findOneAndDelete({ _id: req.params.id, user: req.user.userId });
 

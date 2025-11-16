@@ -28,3 +28,11 @@ exports.requireAdminOrStaff = (req, res, next) => {
   }
   next();
 };
+
+// Kiểm tra quyền Customer (chỉ customer mới được sử dụng)
+exports.requireCustomer = (req, res, next) => {
+  if (req.user.role !== "customer") {
+    return res.status(403).json({ message: "Chỉ khách hàng mới có quyền sử dụng tính năng này!" });
+  }
+  next();
+};

@@ -3,7 +3,7 @@ const router = express.Router();
 const Support = require("../models/Support");
 const Order = require("../models/Order");
 const Notification = require("../models/Notification");
-const { verifyToken, requireAdmin } = require("../middleware/authMiddleware");
+const { verifyToken, requireAdmin, requireCustomer } = require("../middleware/authMiddleware");
 
 // 📋 Lấy danh sách ticket (Customer: chỉ của mình, Admin: tất cả)
 router.get("/", verifyToken, async (req, res) => {
@@ -80,8 +80,8 @@ router.get("/:id", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Tạo ticket mới (Customer)
-router.post("/", verifyToken, async (req, res) => {
+// ➕ Tạo ticket mới (chỉ customer)
+router.post("/", verifyToken, requireCustomer, async (req, res) => {
   try {
     const { subject, category, priority, order, message } = req.body;
 

@@ -302,6 +302,14 @@
             color: white;
         }
 
+        .customer-only {
+            display: block;
+        }
+
+        .customer-only.hidden {
+            display: none !important;
+        }
+
         .admin-tab-content {
             min-height: 400px;
         }
@@ -361,9 +369,9 @@
                 <ul class="nav-links">
                     <li><a href="#" onclick="showSection('home')">Trang chủ</a></li>
                     <li><a href="#" onclick="showSection('products')">Sản phẩm</a></li>
-                    <li><a href="#" onclick="showSection('cart')">Giỏ hàng</a></li>
-                    <li><a href="#" onclick="showSection('orders')">Đơn hàng</a></li>
-                    <li id="adminLink" class="hidden"><a href="#" onclick="showSection('dashboard')">Dashboard</a></li>
+                    <li id="cartLink" class="customer-only"><a href="#" onclick="showSection('cart')">Giỏ hàng</a></li>
+                    <li id="ordersLink" class="customer-only"><a href="#" onclick="showSection('orders')">Đơn hàng</a></li>
+                    <li id="adminLink" class="hidden"><a href="/admin" target="_blank">Quản trị</a></li>
                 </ul>
                 <div class="user-info">
                     <span id="userName"></span>
@@ -417,14 +425,14 @@
             <div id="productsContent">Đang tải...</div>
         </div>
 
-        <!-- Cart Section -->
-        <div id="cartSection" class="section hidden">
+        <!-- Cart Section (Customer only) -->
+        <div id="cartSection" class="section hidden customer-only">
             <h2>Giỏ hàng</h2>
             <div id="cartContent">Đang tải...</div>
         </div>
 
-        <!-- Orders Section -->
-        <div id="ordersSection" class="section hidden">
+        <!-- Orders Section (Customer only) -->
+        <div id="ordersSection" class="section hidden customer-only">
             <h2>Đơn hàng của tôi</h2>
             <div id="ordersContent">Đang tải...</div>
         </div>
@@ -490,9 +498,22 @@
                     document.getElementById('userName').textContent = currentUser.fullName;
                     document.getElementById('loginBtn').classList.add('hidden');
                     document.getElementById('logoutBtn').classList.remove('hidden');
+                    
+                    // Nếu là admin, redirect sang trang admin
                     if (currentUser.role === 'admin') {
-                        document.getElementById('adminLink').classList.remove('hidden');
+                        window.location.href = '/admin';
+                        return;
                     }
+                    
+                    // Nếu là customer, hiển thị các tính năng customer
+                    if (currentUser.role === 'customer') {
+                        document.getElementById('cartLink').classList.remove('hidden');
+                        document.getElementById('ordersLink').classList.remove('hidden');
+                    } else {
+                        document.getElementById('cartLink').classList.add('hidden');
+                        document.getElementById('ordersLink').classList.add('hidden');
+                    }
+                    
                     showSection('home');
                 } else {
                     localStorage.removeItem('token');
@@ -525,6 +546,17 @@
                 if (response.ok) {
                     token = data.token;
                     localStorage.setItem('token', token);
+                    currentUser = data.user;
+                    
+                    // Nếu là admin, redirect sang trang admin
+                    if (data.user && data.user.role === 'admin') {
+                        showAlert('loginAlert', 'Đăng nhập thành công! Đang chuyển đến trang quản trị...', 'success');
+                        setTimeout(() => {
+                            window.location.href = '/admin';
+                        }, 1000);
+                        return;
+                    }
+                    
                     showAlert('loginAlert', 'Đăng nhập thành công!', 'success');
                     setTimeout(() => {
                         checkAuth();
@@ -545,20 +577,32 @@
             document.getElementById('logoutBtn').classList.add('hidden');
             document.getElementById('userName').textContent = '';
             document.getElementById('adminLink').classList.add('hidden');
+            document.getElementById('cartLink').classList.remove('hidden');
+            document.getElementById('ordersLink').classList.remove('hidden');
             showSection('login');
         }
 
         function showSection(section) {
+            // Kiểm tra nếu admin cố truy cập cart hoặc orders
+            if (currentUser && currentUser.role === 'admin' && (section === 'cart' || section === 'orders')) {
+                alert('Admin không thể sử dụng tính năng này! Vui lòng truy cập trang quản trị.');
+                window.location.href = '/admin';
+                return;
+            }
+            
             document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
-            document.getElementById(`${section}Section`).classList.remove('hidden');
+            const targetSection = document.getElementById(`${section}Section`);
+            if (targetSection) {
+                targetSection.classList.remove('hidden');
+            }
             
             if (section === 'home') {
                 loadHome();
                 currentCategoryId = null; // Reset filter khi về trang chủ
             }
             if (section === 'products') loadProducts();
-            if (section === 'cart') loadCart();
-            if (section === 'orders') loadOrders();
+            if (section === 'cart' && currentUser && currentUser.role === 'customer') loadCart();
+            if (section === 'orders' && currentUser && currentUser.role === 'customer') loadOrders();
             if (section === 'dashboard') {
                 loadDashboard();
                 switchAdminTab('overview');
