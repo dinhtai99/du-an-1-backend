@@ -28,10 +28,18 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true }, // Tổng tiền cuối cùng
   paymentMethod: { 
     type: String, 
-    enum: ["COD", "card", "e-wallet"], 
+    enum: ["COD", "card", "e-wallet", "zalopay"], 
     default: "COD",
     required: true 
-  }, // COD / Thẻ / Ví điện tử
+  }, // COD / Thẻ / Ví điện tử / ZaloPay
+  paymentStatus: {
+    type: String,
+    enum: ["pending", "processing", "success", "failed", "cancelled"],
+    default: "pending"
+  }, // Trạng thái thanh toán (chỉ dùng cho online payment)
+  zalopayTransToken: { type: String }, // ZaloPay transaction token (zp_trans_token)
+  zalopayOrderId: { type: String }, // ZaloPay order ID
+  zalopayMac: { type: String }, // ZaloPay MAC for verification
   status: { 
     type: String, 
     enum: ["new", "processing", "shipping", "completed", "cancelled"], 

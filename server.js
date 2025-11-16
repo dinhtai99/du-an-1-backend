@@ -35,7 +35,8 @@ app.get("/api", (req, res) => {
       home: "/api/home",
       statistics: "/api/statistics",
       support: "/api/support",
-      vouchers: "/api/vouchers"
+      vouchers: "/api/vouchers",
+      payment: "/api/payment"
     }
   });
 });
@@ -62,6 +63,7 @@ const statisticsRoutes = require("./routes/statistics");
 const homeRoutes = require("./routes/home");
 const supportRoutes = require("./routes/support");
 const voucherRoutes = require("./routes/vouchers");
+const paymentRoutes = require("./routes/payment");
 
 // Use routes
 app.use("/api/auth", authRoutes);
@@ -79,6 +81,7 @@ app.use("/api/statistics", statisticsRoutes);
 app.use("/api/home", homeRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/vouchers", voucherRoutes);
+app.use("/api/payment", paymentRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

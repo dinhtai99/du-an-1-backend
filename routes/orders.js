@@ -234,6 +234,16 @@ router.post("/", verifyToken, async (req, res) => {
     // Tính tổng tiền cuối cùng
     const total = subtotal + shippingFee - voucherDiscount;
 
+    const finalPaymentMethod = paymentMethod || "COD";
+
+    // Nếu là ZaloPay, redirect đến payment endpoint
+    if (finalPaymentMethod === "zalopay") {
+      return res.status(400).json({ 
+        message: "Vui lòng sử dụng endpoint /api/payment/zalopay/create để thanh toán ZaloPay!",
+        redirectTo: "/api/payment/zalopay/create"
+      });
+    }
+
     // Tạo đơn hàng
     const order = new Order({
       customer: req.user.userId,
@@ -246,7 +256,8 @@ router.post("/", verifyToken, async (req, res) => {
       voucherCode: voucherCodeUsed,
       voucherDiscount,
       total: total > 0 ? total : 0,
-      paymentMethod: paymentMethod || "COD",
+      paymentMethod: finalPaymentMethod,
+      paymentStatus: finalPaymentMethod === "COD" ? "pending" : "pending",
       status: "new",
       notes: notes || "",
       timeline: [{
