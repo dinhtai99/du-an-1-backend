@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const jwt = require("jsonwebtoken");
 const Voucher = require("../models/Voucher");
 const Product = require("../models/Product");
 const { verifyToken, requireAdmin } = require("../middleware/authMiddleware");
@@ -7,7 +8,7 @@ const { verifyToken, requireAdmin } = require("../middleware/authMiddleware");
 // 📋 Lấy danh sách voucher (Public: chỉ voucher hợp lệ, Admin: tất cả)
 router.get("/", async (req, res) => {
   try {
-    const { code, status, page = 1, limit = 10 } = req.query;
+    const { code, status, active, page = 1, limit = 100 } = req.query;
     const query = {};
 
     // Nếu có code, tìm voucher theo code
@@ -15,21 +16,49 @@ router.get("/", async (req, res) => {
       query.code = code.toUpperCase();
     }
 
-    // Customer chỉ xem voucher hợp lệ và đang hiển thị
-    if (!req.user || req.user.role !== "admin") {
+    // Kiểm tra token nếu có (optional)
+    let isAdmin = false;
+    const token = req.headers.authorization?.split(" ")[1];
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        if (decoded && decoded.role === "admin") {
+          isAdmin = true;
+          req.user = decoded;
+        }
+      } catch (err) {
+        // Token không hợp lệ, xử lý như customer
+      }
+    }
+
+    // Customer chỉ xem voucher có status=1 (đang hiển thị)
+    // Không filter theo thời gian và số lượng để customer có thể xem tất cả voucher
+    if (!isAdmin) {
+      query.status = 1;
+    } else {
+      // Admin có thể lọc theo status, nhưng mặc định lấy tất cả
+      if (status !== undefined && status !== '') {
+        query.status = parseInt(status);
+      }
+      // Admin xem tất cả voucher, không cần filter thêm
+    }
+
+    // Nếu có query param `active`, filter theo active (chỉ lấy voucher đang hoạt động)
+    // Nếu không có `active` hoặc `active=false`, chỉ filter theo status=1
+    if (active !== undefined && (active === 'true' || active === true)) {
       const now = new Date();
       query.status = 1;
       query.startDate = { $lte: now };
       query.endDate = { $gte: now };
       query.$expr = { $lt: ["$usedCount", "$quantity"] };
-    } else {
-      // Admin có thể lọc theo status
-      if (status !== undefined) {
-        query.status = parseInt(status);
-      }
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    console.log('🔍 Voucher query:', JSON.stringify(query, null, 2));
+    console.log('👤 Is Admin:', isAdmin);
+    console.log('📄 Page:', page, 'Limit:', limit);
+    
     const vouchers = await Voucher.find(query)
       .populate("applicableProducts", "name")
       .populate("applicableCategories", "name")
@@ -39,16 +68,154 @@ router.get("/", async (req, res) => {
 
     const total = await Voucher.countDocuments(query);
 
+    console.log('✅ Found vouchers:', vouchers.length, 'Total:', total);
+
+    // Map vouchers sang format Android app mong đợi
+    const mappedVouchers = vouchers.map(voucher => {
+      const now = new Date();
+      let statusStr = "active";
+      if (voucher.status === 0) {
+        statusStr = "inactive";
+      } else if (voucher.endDate < now) {
+        statusStr = "expired";
+      } else if (voucher.usedCount >= voucher.quantity) {
+        statusStr = "expired";
+      }
+
+      return {
+        _id: voucher._id.toString(),
+        code: voucher.code,
+        name: voucher.name,
+        description: voucher.description || "",
+        discount: voucher.value, // Map value → discount
+        discountType: voucher.type, // Map type → discountType
+        minOrderAmount: voucher.minOrderValue || 0,
+        quantity: voucher.quantity,
+        used: voucher.usedCount || 0, // Map usedCount → used
+        startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
+        endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
+        status: statusStr, // Map status (0/1) → status ("active"/"inactive"/"expired")
+        createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
+        updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
+      };
+    });
+
+    // Trả về format Android app mong đợi
     res.json({
-      vouchers,
-      total,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / parseInt(limit)),
+      success: true,
+      message: "Lấy danh sách voucher thành công!",
+      data: mappedVouchers,
     });
   } catch (error) {
     console.error("Get vouchers error:", error);
-    res.status(500).json({ message: "Lỗi server!" });
+    res.status(500).json({ 
+      success: false,
+      message: "Lỗi server!",
+      data: null
+    });
+  }
+});
+
+// 🔍 Validate voucher code (GET /api/vouchers/validate/{code})
+// ⚠️ PHẢI ĐẶT TRƯỚC route /:id để Express match đúng
+router.get("/validate/:code", async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    if (!code) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Vui lòng nhập mã voucher!",
+        data: null
+      });
+    }
+
+    const voucher = await Voucher.findOne({ code: code.toUpperCase() })
+      .populate("applicableProducts", "name category")
+      .populate("applicableCategories", "name");
+
+    if (!voucher) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Mã voucher không tồn tại!",
+        data: null
+      });
+    }
+
+    // Kiểm tra trạng thái
+    if (voucher.status === 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Voucher đã bị vô hiệu hóa!",
+        data: null
+      });
+    }
+
+    // Kiểm tra số lượng
+    if (voucher.usedCount >= voucher.quantity) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Voucher đã hết lượt sử dụng!",
+        data: null
+      });
+    }
+
+    // Kiểm tra thời gian
+    const now = new Date();
+    if (now < voucher.startDate) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Voucher chưa có hiệu lực!",
+        data: null
+      });
+    }
+    if (now > voucher.endDate) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Voucher đã hết hạn!",
+        data: null
+      });
+    }
+
+    // Map voucher sang format Android app mong đợi
+    let statusStr = "active";
+    if (voucher.status === 0) {
+      statusStr = "inactive";
+    } else if (voucher.endDate < now) {
+      statusStr = "expired";
+    } else if (voucher.usedCount >= voucher.quantity) {
+      statusStr = "expired";
+    }
+
+    const mappedVoucher = {
+      _id: voucher._id.toString(),
+      code: voucher.code,
+      name: voucher.name,
+      description: voucher.description || "",
+      discount: voucher.value,
+      discountType: voucher.type,
+      minOrderAmount: voucher.minOrderValue || 0,
+      quantity: voucher.quantity,
+      used: voucher.usedCount || 0,
+      startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
+      endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
+      status: statusStr,
+      createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
+      updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
+    };
+
+    res.json({
+      success: true,
+      message: "Voucher hợp lệ!",
+      data: mappedVoucher,
+    });
+  } catch (error) {
+    console.error("Validate voucher error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Lỗi server!",
+      data: null
+    });
   }
 });
 
@@ -60,13 +227,53 @@ router.get("/:id", async (req, res) => {
       .populate("applicableCategories", "name");
 
     if (!voucher) {
-      return res.status(404).json({ message: "Không tìm thấy voucher!" });
+      return res.status(404).json({ 
+        success: false,
+        message: "Không tìm thấy voucher!",
+        data: null
+      });
     }
 
-    res.json(voucher);
+    // Map voucher sang format Android app mong đợi
+    const now = new Date();
+    let statusStr = "active";
+    if (voucher.status === 0) {
+      statusStr = "inactive";
+    } else if (voucher.endDate < now) {
+      statusStr = "expired";
+    } else if (voucher.usedCount >= voucher.quantity) {
+      statusStr = "expired";
+    }
+
+    const mappedVoucher = {
+      _id: voucher._id.toString(),
+      code: voucher.code,
+      name: voucher.name,
+      description: voucher.description || "",
+      discount: voucher.value,
+      discountType: voucher.type,
+      minOrderAmount: voucher.minOrderValue || 0,
+      quantity: voucher.quantity,
+      used: voucher.usedCount || 0,
+      startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
+      endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
+      status: statusStr,
+      createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
+      updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
+    };
+
+    res.json({
+      success: true,
+      message: "Lấy chi tiết voucher thành công!",
+      data: mappedVoucher,
+    });
   } catch (error) {
     console.error("Get voucher error:", error);
-    res.status(500).json({ message: "Lỗi server!" });
+    res.status(500).json({ 
+      success: false,
+      message: "Lỗi server!",
+      data: null
+    });
   }
 });
 

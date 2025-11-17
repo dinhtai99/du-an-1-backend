@@ -10,27 +10,31 @@ router.get("/overview", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = { status: "completed" };
+    // Query cho tất cả đơn hàng (trừ cancelled) - dùng cho tổng đơn hàng, doanh thu và lợi nhuận
+    const allOrdersQuery = { status: { $ne: "cancelled" } };
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
+      allOrdersQuery.createdAt = {};
+      if (startDate) allOrdersQuery.createdAt.$gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
+        allOrdersQuery.createdAt.$lte = end;
       }
     }
 
-    const orders = await Order.find(query);
-    const totalOrders = orders.length;
-    const totalRevenue = orders.reduce((sum, order) => sum + order.total, 0);
+    // Tổng số đơn hàng (tất cả trừ cancelled)
+    const totalOrders = await Order.countDocuments(allOrdersQuery);
 
-    // Tính lợi nhuận (tổng doanh thu - tổng giá nhập)
+    // Tổng doanh thu (tính từ tất cả đơn hàng trừ cancelled)
+    const allOrders = await Order.find(allOrdersQuery);
+    const totalRevenue = allOrders.reduce((sum, order) => sum + order.total, 0);
+
+    // Tính lợi nhuận (tổng doanh thu - tổng giá nhập) - tính từ tất cả đơn hàng trừ cancelled
     let totalProfit = 0;
-    for (const order of orders) {
+    for (const order of allOrders) {
       for (const item of order.items) {
         const product = await Product.findById(item.product);
-        if (product) {
+        if (product && product.importPrice) {
           const cost = product.importPrice * item.quantity;
           const revenue = item.subtotal;
           totalProfit += revenue - cost;
@@ -44,9 +48,9 @@ router.get("/overview", verifyToken, requireAdmin, async (req, res) => {
     // Tổng số khách hàng
     const totalCustomers = await User.countDocuments({ role: "customer" });
 
-    // Sản phẩm tồn kho thấp
+    // Sản phẩm tồn kho thấp (dưới 5)
     const lowStockProducts = await Product.countDocuments({
-      $expr: { $lte: ["$stock", "$minStock"] },
+      stock: { $lt: 5 },
       status: 1,
     });
 
@@ -259,7 +263,7 @@ router.get("/revenue/yearly", verifyToken, requireAdmin, async (req, res) => {
 router.get("/low-stock", verifyToken, requireAdmin, async (req, res) => {
   try {
     const products = await Product.find({
-      $expr: { $lte: ["$stock", "$minStock"] },
+      stock: { $lt: 5 },
       status: 1,
     })
       .populate("category", "name")
@@ -270,7 +274,7 @@ router.get("/low-stock", verifyToken, requireAdmin, async (req, res) => {
       product,
       stock: product.stock,
       minStock: product.minStock,
-      warning: product.stock <= product.minStock,
+      warning: product.stock < 5,
     }));
 
     res.json(result);

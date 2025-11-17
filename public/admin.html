@@ -604,6 +604,14 @@
                     <span class="menu-item-icon">📈</span>
                     <span class="menu-item-text">Thống kê</span>
                 </div>
+                <div class="menu-item" onclick="showVouchers()">
+                    <span class="menu-item-icon">🎫</span>
+                    <span class="menu-item-text">Quản lý Voucher</span>
+                </div>
+                <div class="menu-item" onclick="showAPIManagement()">
+                    <span class="menu-item-icon">🔌</span>
+                    <span class="menu-item-text">Quản lý API</span>
+                </div>
             </div>
         </div>
 
@@ -644,6 +652,16 @@
                     <div class="dashboard-card-icon">📊</div>
                     <h3>Thống kê</h3>
                     <p>Xem thống kê</p>
+                </div>
+                <div class="dashboard-card" onclick="showVouchers()">
+                    <div class="dashboard-card-icon">🎫</div>
+                    <h3>Quản lý Voucher</h3>
+                    <p>Quản lý voucher khách hàng</p>
+                </div>
+                <div class="dashboard-card" onclick="showAPIManagement()">
+                    <div class="dashboard-card-icon">🔌</div>
+                    <h3>Quản lý API</h3>
+                    <p>Xem danh sách API endpoints</p>
                 </div>
             </div>
 
@@ -717,6 +735,41 @@
             <div id="statisticsSection" class="hidden">
                 <h2 style="margin-bottom: 20px;">Thống kê</h2>
                 <div id="statisticsContent"></div>
+            </div>
+
+            <!-- Vouchers Management -->
+            <div id="vouchersSection" class="hidden">
+                <div class="table-container">
+                    <div class="table-header">
+                        <h2>Quản lý Voucher</h2>
+                        <div class="search-box">
+                            <input type="text" id="voucherSearch" placeholder="Tìm kiếm..." onkeyup="loadVouchers()">
+                            <select id="voucherStatusFilter" onchange="loadVouchers()">
+                                <option value="">Tất cả trạng thái</option>
+                                <option value="1">Hoạt động</option>
+                                <option value="0">Ẩn</option>
+                            </select>
+                            <button class="btn btn-primary" onclick="showAddVoucher()">Thêm voucher</button>
+                        </div>
+                    </div>
+                    <div id="vouchersTable"></div>
+                    <div id="vouchersPagination" class="pagination"></div>
+                </div>
+            </div>
+
+            <!-- API Management -->
+            <div id="apiManagementSection" class="hidden">
+                <div class="table-container">
+                    <div class="table-header">
+                        <h2>Quản lý API Endpoints</h2>
+                        <div class="search-box">
+                            <input type="text" id="apiSearch" placeholder="Tìm kiếm endpoint..." onkeyup="filterAPIs()">
+                        </div>
+                    </div>
+                    <div id="apiContent" style="padding: 24px;">
+                        <div id="apiList"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -822,6 +875,93 @@
         </div>
     </div>
 
+    <!-- Add/Edit Voucher Modal -->
+    <div id="voucherModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2 id="voucherModalTitle">Thêm voucher</h2>
+                <button class="close-btn" onclick="closeModal('voucherModal')">&times;</button>
+            </div>
+            <form id="voucherForm">
+                <input type="hidden" id="voucherId">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Mã voucher *</label>
+                        <input type="text" id="voucherCode" required style="text-transform: uppercase;">
+                    </div>
+                    <div class="form-group">
+                        <label>Tên voucher *</label>
+                        <input type="text" id="voucherName" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Mô tả</label>
+                    <textarea id="voucherDescription" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Loại *</label>
+                        <select id="voucherType" required onchange="toggleVoucherFields()">
+                            <option value="percentage">Phần trăm (%)</option>
+                            <option value="fixed">Số tiền cố định (VNĐ)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Giá trị *</label>
+                        <input type="number" id="voucherValue" required min="0" step="0.01">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" id="maxDiscountGroup" style="display: none;">
+                        <label>Giảm giá tối đa (VNĐ)</label>
+                        <input type="number" id="voucherMaxDiscount" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>Đơn hàng tối thiểu (VNĐ)</label>
+                        <input type="number" id="voucherMinOrderValue" min="0" value="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Số lượng *</label>
+                        <input type="number" id="voucherQuantity" required min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>Trạng thái</label>
+                        <select id="voucherStatus">
+                            <option value="1">Hoạt động</option>
+                            <option value="0">Ẩn</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Ngày bắt đầu *</label>
+                        <input type="datetime-local" id="voucherStartDate" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Ngày kết thúc *</label>
+                        <input type="datetime-local" id="voucherEndDate" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Sản phẩm áp dụng (để trống = tất cả)</label>
+                    <input type="text" id="voucherProducts" placeholder="Nhập ID sản phẩm, cách nhau bởi dấu phẩy">
+                </div>
+                <div class="form-group">
+                    <label>Danh mục áp dụng (để trống = tất cả)</label>
+                    <input type="text" id="voucherCategories" placeholder="Nhập ID danh mục, cách nhau bởi dấu phẩy">
+                </div>
+                <div class="form-group">
+                    <label>Người dùng áp dụng (để trống = tất cả)</label>
+                    <input type="text" id="voucherUsers" placeholder="Nhập ID người dùng, cách nhau bởi dấu phẩy">
+                </div>
+                <button type="submit" class="btn btn-primary">Lưu</button>
+                <div id="voucherError" class="error-message"></div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_BASE = '/api';
         let currentToken = localStorage.getItem('adminToken');
@@ -829,7 +969,8 @@
             orders: 1,
             products: 1,
             categories: 1,
-            customers: 1
+            customers: 1,
+            vouchers: 1
         };
 
         // Check if already logged in
@@ -944,6 +1085,20 @@
             updatePageTitle('Thống kê');
             updateActiveMenu(event?.target?.closest('.menu-item') || document.querySelectorAll('.menu-item')[5]);
             loadStatistics();
+        }
+
+        function showVouchers() {
+            showSection('vouchersSection');
+            updatePageTitle('Quản lý Voucher');
+            updateActiveMenu(event?.target?.closest('.menu-item') || document.querySelectorAll('.menu-item')[6]);
+            loadVouchers();
+        }
+
+        function showAPIManagement() {
+            showSection('apiManagementSection');
+            updatePageTitle('Quản lý API');
+            updateActiveMenu(event?.target?.closest('.menu-item') || document.querySelectorAll('.menu-item')[7]);
+            loadAPIs();
         }
 
         // Load Orders
@@ -1593,6 +1748,441 @@
             } catch (error) {
                 alert('Lỗi tải dữ liệu khách hàng!');
             }
+        }
+
+        // Voucher Management
+        async function loadVouchers(page = 1) {
+            const search = document.getElementById('voucherSearch')?.value || '';
+            const status = document.getElementById('voucherStatusFilter')?.value || '';
+            const params = new URLSearchParams({ page, limit: 10 });
+            if (status) params.append('status', status);
+
+            try {
+                const url = `${API_BASE}/vouchers?${params}`;
+                const headers = getAuthHeaders();
+                
+                console.log('🔍 Loading vouchers:', url);
+                console.log('🔑 Headers:', headers);
+                
+                const response = await fetch(url, { headers });
+                const data = await response.json();
+
+                console.log('📦 Response status:', response.status);
+                console.log('📦 Response data:', data);
+
+                if (response.ok) {
+                    // Kiểm tra format response (hỗ trợ cả format cũ và mới)
+                    let vouchers = [];
+                    if (data.data && Array.isArray(data.data)) {
+                        // Format mới: { success: true, data: [...] }
+                        vouchers = data.data;
+                    } else if (data.vouchers && Array.isArray(data.vouchers)) {
+                        // Format cũ: { vouchers: [...] }
+                        vouchers = data.vouchers;
+                    } else if (Array.isArray(data)) {
+                        // Format array trực tiếp
+                        vouchers = data;
+                    }
+                    
+                    if (vouchers.length > 0) {
+                        console.log('✅ Found vouchers:', vouchers.length);
+                        renderVouchersTable(vouchers);
+                        // Phân trang (nếu có)
+                        if (data.totalPages) {
+                            renderPagination('vouchersPagination', data.page || 1, data.totalPages, (p) => {
+                                currentPage.vouchers = p;
+                                loadVouchers(p);
+                            });
+                        } else {
+                            document.getElementById('vouchersPagination').innerHTML = '';
+                        }
+                    } else {
+                        console.log('⚠️ No vouchers found');
+                        document.getElementById('vouchersTable').innerHTML = '<div style="padding: 40px; text-align: center; color: #64748b;">Không có voucher nào! <br><button class="btn btn-primary" onclick="showAddVoucher()" style="margin-top: 10px;">Thêm voucher đầu tiên</button></div>';
+                        document.getElementById('vouchersPagination').innerHTML = '';
+                    }
+                } else {
+                    console.error('❌ API Error:', data);
+                    document.getElementById('vouchersTable').innerHTML = `<div style="padding: 40px; text-align: center; color: #e74c3c;">Lỗi: ${data.message || 'Không thể tải danh sách voucher'}</div>`;
+                }
+            } catch (error) {
+                console.error('❌ Network Error:', error);
+                document.getElementById('vouchersTable').innerHTML = '<div style="padding: 40px; text-align: center; color: #e74c3c;">Lỗi kết nối server! Vui lòng kiểm tra console (F12) để xem chi tiết.</div>';
+            }
+        }
+
+        function renderVouchersTable(vouchers) {
+            const table = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Mã voucher</th>
+                            <th>Tên</th>
+                            <th>Loại</th>
+                            <th>Giá trị</th>
+                            <th>Số lượng</th>
+                            <th>Đã dùng</th>
+                            <th>Ngày bắt đầu</th>
+                            <th>Ngày kết thúc</th>
+                            <th>Trạng thái</th>
+                            <th>Thao tác</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${vouchers.map(voucher => {
+                            // Hỗ trợ cả format cũ và mới
+                            const code = voucher.code || '';
+                            const name = voucher.name || '';
+                            const type = voucher.type || voucher.discountType || 'percentage';
+                            const value = voucher.value || voucher.discount || 0;
+                            const quantity = voucher.quantity || 0;
+                            const usedCount = voucher.usedCount || voucher.used || 0;
+                            const startDate = voucher.startDate ? new Date(voucher.startDate) : new Date();
+                            const endDate = voucher.endDate ? new Date(voucher.endDate) : new Date();
+                            const status = voucher.status; // Có thể là 0/1 hoặc "active"/"inactive"/"expired"
+                            const id = voucher._id || voucher.id || '';
+                            
+                            // Xác định trạng thái hiển thị
+                            let statusClass = 'status-cancelled';
+                            let statusText = 'Không hợp lệ';
+                            
+                            if (typeof status === 'string') {
+                                // Format mới: "active", "inactive", "expired"
+                                if (status === 'active') {
+                                    statusClass = 'status-completed';
+                                    statusText = 'Hoạt động';
+                                } else if (status === 'inactive') {
+                                    statusClass = 'status-cancelled';
+                                    statusText = 'Dừng hoạt động';
+                                } else if (status === 'expired') {
+                                    statusClass = 'status-cancelled';
+                                    statusText = 'Hết hạn';
+                                }
+                            } else {
+                                // Format cũ: 0 hoặc 1
+                                const now = new Date();
+                                const isValid = status === 1 && 
+                                              quantity > usedCount &&
+                                              startDate <= now &&
+                                              endDate >= now;
+                                statusClass = isValid ? 'status-completed' : 'status-cancelled';
+                                statusText = isValid ? 'Hợp lệ' : 'Không hợp lệ';
+                            }
+                            
+                            return `
+                            <tr>
+                                <td><strong>${code}</strong></td>
+                                <td>${name}</td>
+                                <td>${type === 'percentage' ? 'Phần trăm' : 'Cố định'}</td>
+                                <td>${type === 'percentage' ? value + '%' : value.toLocaleString('vi-VN') + ' VNĐ'}</td>
+                                <td>${quantity}</td>
+                                <td>${usedCount}</td>
+                                <td>${startDate.toLocaleDateString('vi-VN')}</td>
+                                <td>${endDate.toLocaleDateString('vi-VN')}</td>
+                                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                                <td>
+                                    <button class="btn-sm btn-view" onclick="viewVoucher('${id}')">Xem</button>
+                                    <button class="btn-sm btn-edit" onclick="editVoucher('${id}')">Sửa</button>
+                                    <button class="btn-sm btn-delete" onclick="deleteVoucher('${id}')">Xóa</button>
+                                </td>
+                            </tr>
+                        `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('vouchersTable').innerHTML = table;
+        }
+
+        function showAddVoucher() {
+            document.getElementById('voucherId').value = '';
+            document.getElementById('voucherForm').reset();
+            document.getElementById('voucherModalTitle').textContent = 'Thêm voucher';
+            document.getElementById('voucherModal').classList.add('active');
+            toggleVoucherFields();
+        }
+
+        function toggleVoucherFields() {
+            const type = document.getElementById('voucherType')?.value;
+            const maxDiscountGroup = document.getElementById('maxDiscountGroup');
+            if (type === 'percentage' && maxDiscountGroup) {
+                maxDiscountGroup.style.display = 'block';
+            } else if (maxDiscountGroup) {
+                maxDiscountGroup.style.display = 'none';
+            }
+        }
+
+        async function editVoucher(id) {
+            try {
+                const response = await fetch(`${API_BASE}/vouchers/${id}`, {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                // Hỗ trợ cả format mới và cũ
+                const voucher = result.data || result;
+
+                document.getElementById('voucherId').value = voucher._id || id;
+                document.getElementById('voucherCode').value = voucher.code || '';
+                document.getElementById('voucherName').value = voucher.name || '';
+                document.getElementById('voucherDescription').value = voucher.description || '';
+                document.getElementById('voucherType').value = voucher.type || voucher.discountType || 'percentage';
+                document.getElementById('voucherValue').value = voucher.value || voucher.discount || '';
+                document.getElementById('voucherMaxDiscount').value = voucher.maxDiscount || '';
+                document.getElementById('voucherMinOrderValue').value = voucher.minOrderValue || voucher.minOrderAmount || 0;
+                document.getElementById('voucherQuantity').value = voucher.quantity || '';
+                
+                // Xử lý status (có thể là 0/1 hoặc "active"/"inactive")
+                let statusValue = 1;
+                if (voucher.status !== undefined) {
+                    if (typeof voucher.status === 'string') {
+                        statusValue = voucher.status === 'active' ? 1 : 0;
+                    } else {
+                        statusValue = voucher.status;
+                    }
+                }
+                document.getElementById('voucherStatus').value = statusValue;
+                
+                const startDate = voucher.startDate ? new Date(voucher.startDate) : new Date();
+                const endDate = voucher.endDate ? new Date(voucher.endDate) : new Date();
+                document.getElementById('voucherStartDate').value = startDate.toISOString().slice(0, 16);
+                document.getElementById('voucherEndDate').value = endDate.toISOString().slice(0, 16);
+                
+                document.getElementById('voucherProducts').value = voucher.applicableProducts?.map(p => p._id || p).join(', ') || '';
+                document.getElementById('voucherCategories').value = voucher.applicableCategories?.map(c => c._id || c).join(', ') || '';
+                document.getElementById('voucherUsers').value = voucher.applicableUsers?.map(u => u._id || u).join(', ') || '';
+
+                document.getElementById('voucherModalTitle').textContent = 'Sửa voucher';
+                document.getElementById('voucherModal').classList.add('active');
+                toggleVoucherFields();
+            } catch (error) {
+                console.error('Error loading voucher:', error);
+                alert('Lỗi tải dữ liệu voucher!');
+            }
+        }
+
+        document.getElementById('voucherForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('voucherId').value;
+            
+            const parseIds = (str) => {
+                if (!str || !str.trim()) return [];
+                return str.split(',').map(s => s.trim()).filter(s => s);
+            };
+
+            const data = {
+                code: document.getElementById('voucherCode').value.toUpperCase(),
+                name: document.getElementById('voucherName').value,
+                description: document.getElementById('voucherDescription').value,
+                type: document.getElementById('voucherType').value,
+                value: parseFloat(document.getElementById('voucherValue').value),
+                minOrderValue: parseFloat(document.getElementById('voucherMinOrderValue').value) || 0,
+                quantity: parseInt(document.getElementById('voucherQuantity').value),
+                startDate: document.getElementById('voucherStartDate').value,
+                endDate: document.getElementById('voucherEndDate').value,
+                status: parseInt(document.getElementById('voucherStatus').value),
+                applicableProducts: parseIds(document.getElementById('voucherProducts').value),
+                applicableCategories: parseIds(document.getElementById('voucherCategories').value),
+                applicableUsers: parseIds(document.getElementById('voucherUsers').value)
+            };
+
+            if (data.type === 'percentage' && document.getElementById('voucherMaxDiscount').value) {
+                data.maxDiscount = parseFloat(document.getElementById('voucherMaxDiscount').value);
+            }
+
+            try {
+                const url = id ? `${API_BASE}/vouchers/${id}` : `${API_BASE}/vouchers`;
+                const method = id ? 'PUT' : 'POST';
+                const response = await fetch(url, {
+                    method,
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert('Lưu thành công!');
+                    closeModal('voucherModal');
+                    loadVouchers(currentPage.vouchers);
+                } else {
+                    document.getElementById('voucherError').textContent = result.message || 'Có lỗi xảy ra!';
+                }
+            } catch (error) {
+                document.getElementById('voucherError').textContent = 'Lỗi kết nối server!';
+            }
+        });
+
+        async function deleteVoucher(id) {
+            if (!confirm('Bạn có chắc muốn xóa voucher này?')) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/vouchers/${id}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+
+                if (response.ok) {
+                    alert('Xóa thành công!');
+                    loadVouchers(currentPage.vouchers);
+                } else {
+                    const data = await response.json();
+                    alert(data.message || 'Có lỗi xảy ra!');
+                }
+            } catch (error) {
+                alert('Lỗi kết nối server!');
+            }
+        }
+
+        async function viewVoucher(id) {
+            try {
+                const response = await fetch(`${API_BASE}/vouchers/${id}`, {
+                    headers: getAuthHeaders()
+                });
+                const result = await response.json();
+                
+                // Hỗ trợ cả format mới và cũ
+                const voucher = result.data || result;
+
+                if (response.ok && voucher) {
+                    const type = voucher.type || voucher.discountType || 'percentage';
+                    const value = voucher.value || voucher.discount || 0;
+                    const quantity = voucher.quantity || 0;
+                    const usedCount = voucher.usedCount || voucher.used || 0;
+                    const minOrderValue = voucher.minOrderValue || voucher.minOrderAmount || 0;
+                    const startDate = voucher.startDate ? new Date(voucher.startDate) : new Date();
+                    const endDate = voucher.endDate ? new Date(voucher.endDate) : new Date();
+                    
+                    const now = new Date();
+                    let statusText = 'Không hợp lệ';
+                    if (typeof voucher.status === 'string') {
+                        statusText = voucher.status === 'active' ? 'Hoạt động' : 
+                                   voucher.status === 'inactive' ? 'Dừng hoạt động' : 'Hết hạn';
+                    } else {
+                        const isValid = voucher.status === 1 && 
+                                      quantity > usedCount &&
+                                      startDate <= now &&
+                                      endDate >= now;
+                        statusText = isValid ? 'Hợp lệ' : 'Không hợp lệ';
+                    }
+
+                    alert(`Chi tiết voucher:\n\n` +
+                        `Mã: ${voucher.code || 'N/A'}\n` +
+                        `Tên: ${voucher.name || 'N/A'}\n` +
+                        `Mô tả: ${voucher.description || 'N/A'}\n` +
+                        `Loại: ${type === 'percentage' ? 'Phần trăm' : 'Cố định'}\n` +
+                        `Giá trị: ${type === 'percentage' ? value + '%' : value.toLocaleString('vi-VN') + ' VNĐ'}\n` +
+                        `Giảm tối đa: ${voucher.maxDiscount ? voucher.maxDiscount.toLocaleString('vi-VN') + ' VNĐ' : 'Không giới hạn'}\n` +
+                        `Đơn hàng tối thiểu: ${minOrderValue.toLocaleString('vi-VN')} VNĐ\n` +
+                        `Số lượng: ${quantity}\n` +
+                        `Đã dùng: ${usedCount}\n` +
+                        `Còn lại: ${quantity - usedCount}\n` +
+                        `Ngày bắt đầu: ${startDate.toLocaleString('vi-VN')}\n` +
+                        `Ngày kết thúc: ${endDate.toLocaleString('vi-VN')}\n` +
+                        `Trạng thái: ${statusText}\n` +
+                        `Hiển thị: ${(typeof voucher.status === 'string' ? voucher.status === 'active' : voucher.status === 1) ? 'Có' : 'Không'}`);
+                } else {
+                    alert('Không tìm thấy voucher!');
+                }
+            } catch (error) {
+                console.error('Error loading voucher:', error);
+                alert('Lỗi tải dữ liệu voucher!');
+            }
+        }
+
+        // API Management
+        const apiEndpoints = [
+            { method: 'POST', path: '/api/auth/login', description: 'Đăng nhập', auth: false },
+            { method: 'POST', path: '/api/auth/logout', description: 'Đăng xuất', auth: true },
+            { method: 'PUT', path: '/api/auth/change-password', description: 'Đổi mật khẩu', auth: true },
+            { method: 'GET', path: '/api/auth/me', description: 'Lấy thông tin user hiện tại', auth: true },
+            { method: 'GET', path: '/api/users', description: 'Lấy danh sách nhân viên', auth: true, admin: true },
+            { method: 'GET', path: '/api/users/:id', description: 'Lấy chi tiết nhân viên', auth: true, admin: true },
+            { method: 'POST', path: '/api/users', description: 'Thêm nhân viên mới', auth: true, admin: true },
+            { method: 'PUT', path: '/api/users/:id', description: 'Cập nhật nhân viên', auth: true, admin: true },
+            { method: 'DELETE', path: '/api/users/:id', description: 'Xóa nhân viên', auth: true, admin: true },
+            { method: 'GET', path: '/api/categories', description: 'Lấy danh sách loại sản phẩm', auth: false },
+            { method: 'GET', path: '/api/categories/all', description: 'Lấy tất cả loại sản phẩm', auth: false },
+            { method: 'GET', path: '/api/categories/:id', description: 'Lấy chi tiết loại sản phẩm', auth: false },
+            { method: 'POST', path: '/api/categories', description: 'Thêm loại sản phẩm', auth: true },
+            { method: 'PUT', path: '/api/categories/:id', description: 'Cập nhật loại sản phẩm', auth: true },
+            { method: 'DELETE', path: '/api/categories/:id', description: 'Xóa loại sản phẩm', auth: true },
+            { method: 'GET', path: '/api/products', description: 'Lấy danh sách sản phẩm', auth: false },
+            { method: 'GET', path: '/api/products/:id', description: 'Lấy chi tiết sản phẩm', auth: false },
+            { method: 'POST', path: '/api/products', description: 'Thêm sản phẩm mới', auth: true },
+            { method: 'PUT', path: '/api/products/:id', description: 'Cập nhật sản phẩm', auth: true },
+            { method: 'DELETE', path: '/api/products/:id', description: 'Xóa/Ẩn sản phẩm', auth: true },
+            { method: 'GET', path: '/api/cart', description: 'Lấy giỏ hàng', auth: true },
+            { method: 'POST', path: '/api/cart', description: 'Thêm vào giỏ hàng', auth: true },
+            { method: 'PUT', path: '/api/cart/:id', description: 'Cập nhật giỏ hàng', auth: true },
+            { method: 'DELETE', path: '/api/cart/:id', description: 'Xóa khỏi giỏ hàng', auth: true },
+            { method: 'GET', path: '/api/orders', description: 'Lấy danh sách đơn hàng', auth: true },
+            { method: 'GET', path: '/api/orders/:id', description: 'Lấy chi tiết đơn hàng', auth: true },
+            { method: 'POST', path: '/api/orders', description: 'Tạo đơn hàng mới', auth: true },
+            { method: 'PUT', path: '/api/orders/:id/status', description: 'Cập nhật trạng thái đơn hàng', auth: true },
+            { method: 'GET', path: '/api/vouchers', description: 'Lấy danh sách voucher', auth: false },
+            { method: 'GET', path: '/api/vouchers/:id', description: 'Lấy chi tiết voucher', auth: false },
+            { method: 'POST', path: '/api/vouchers/check', description: 'Kiểm tra voucher hợp lệ', auth: true },
+            { method: 'POST', path: '/api/vouchers', description: 'Tạo voucher mới', auth: true, admin: true },
+            { method: 'PUT', path: '/api/vouchers/:id', description: 'Cập nhật voucher', auth: true, admin: true },
+            { method: 'DELETE', path: '/api/vouchers/:id', description: 'Xóa voucher', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/overview', description: 'Tổng hợp thống kê', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/revenue/daily', description: 'Doanh thu theo ngày', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/revenue/monthly', description: 'Doanh thu theo tháng', auth: true, admin: true },
+            { method: 'GET', path: '/api/dashboard', description: 'Dashboard tổng quan', auth: true, admin: true },
+        ];
+
+        function loadAPIs() {
+            const apiList = document.getElementById('apiList');
+            const grouped = {};
+            
+            apiEndpoints.forEach(api => {
+                const category = api.path.split('/')[2] || 'other';
+                if (!grouped[category]) {
+                    grouped[category] = [];
+                }
+                grouped[category].push(api);
+            });
+
+            let html = '';
+            Object.keys(grouped).sort().forEach(category => {
+                html += `<div style="margin-bottom: 30px;">`;
+                html += `<h3 style="color: #1e293b; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0;">${category.toUpperCase()}</h3>`;
+                html += `<div style="display: grid; gap: 12px;">`;
+                
+                grouped[category].forEach(api => {
+                    const methodColor = {
+                        'GET': '#10b981',
+                        'POST': '#3b82f6',
+                        'PUT': '#f59e0b',
+                        'DELETE': '#ef4444',
+                        'PATCH': '#8b5cf6'
+                    }[api.method] || '#64748b';
+                    
+                    html += `
+                        <div style="background: white; padding: 16px; border-radius: 8px; border: 1px solid #e2e8f0; display: flex; align-items: center; gap: 15px;" class="api-item">
+                            <span style="background: ${methodColor}; color: white; padding: 4px 12px; border-radius: 4px; font-weight: 600; font-size: 12px; min-width: 60px; text-align: center;">${api.method}</span>
+                            <code style="flex: 1; color: #1e293b; font-size: 14px; font-weight: 500;">${api.path}</code>
+                            <span style="color: #64748b; font-size: 13px;">${api.description}</span>
+                            ${api.auth ? '<span style="background: #fef3c7; color: #92400e; padding: 2px 8px; border-radius: 4px; font-size: 11px;">Auth</span>' : ''}
+                            ${api.admin ? '<span style="background: #fee2e2; color: #991b1b; padding: 2px 8px; border-radius: 4px; font-size: 11px;">Admin</span>' : ''}
+                        </div>
+                    `;
+                });
+                
+                html += `</div></div>`;
+            });
+
+            apiList.innerHTML = html;
+        }
+
+        function filterAPIs() {
+            const search = document.getElementById('apiSearch').value.toLowerCase();
+            const items = document.querySelectorAll('.api-item');
+            
+            items.forEach(item => {
+                const text = item.textContent.toLowerCase();
+                item.style.display = text.includes(search) ? 'flex' : 'none';
+            });
         }
 
         // Close modals when clicking outside

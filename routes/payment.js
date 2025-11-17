@@ -16,7 +16,7 @@ const { verifyToken, requireCustomer } = require("../middleware/authMiddleware")
  */
 router.post("/zalopay/create", verifyToken, async (req, res) => {
   try {
-   const { shippingAddress, notes, voucherCode, orderId, items } = req.body;
+    const { shippingAddress, notes, voucherCode, orderId, items } = req.body;
 
     let order;
 
@@ -39,7 +39,7 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       }
 
       // Lấy giỏ hàng
-        let cartItems = [];
+      let cartItems = [];
       let cart = null;
 
       if (items && items.length > 0) {
@@ -48,10 +48,8 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
         cartItems = items;
         
         // Populate product info cho từng item
-         for (const item of cartItems) {
-        const product = item.product;
-        const quantity = item.quantity;
-        const price = item.price || (product.salePrice || product.price);
+        for (const item of cartItems) {
+          const product = await Product.findById(item.product);
           if (!product) {
             return res.status(400).json({ message: `Sản phẩm ${item.product} không tồn tại!` });
           }
@@ -79,9 +77,16 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       const orderItems = [];
       const productIds = [];
 
-      for (const item of cart.items) {
+      for (const item of cartItems) {
         const product = item.product;
+        const quantity = item.quantity;
+        const price = item.price || (product.salePrice || product.price);
         
+        // ✅ KIỂM TRA PRODUCT CÓ TỒN TẠI KHÔNG
+        if (!product || !product._id) {
+          return res.status(400).json({ message: `Sản phẩm không hợp lệ!` });
+        }
+
         if (product.status === 0) {
           return res.status(400).json({ message: `Sản phẩm ${product.name} đã bị ẩn!` });
         }
@@ -94,7 +99,7 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
 
         const itemSubtotal = price * quantity;
 
-         orderItems.push({
+        orderItems.push({
           product: product._id,
           quantity: quantity,
           color: item.color || "",
@@ -178,8 +183,20 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       // Tính tổng tiền cuối cùng
       const total = subtotal + shippingFee - voucherDiscount;
 
+      // ✅ TẠO ORDER NUMBER
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const orderNumber = `ORD-${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
+
       // Tạo đơn hàng với paymentMethod = "zalopay" và paymentStatus = "pending"
       order = new Order({
+        orderNumber: orderNumber, // ✅ THÊM DÒNG NÀY
         customer: req.user.userId,
         shippingAddress,
         items: orderItems,
@@ -373,7 +390,8 @@ router.post("/zalopay/callback", async (req, res) => {
       });
 
       // Xóa giỏ hàng nếu có
-       if (cart) {
+      const cart = await Cart.findOne({ user: order.customer });
+      if (cart) {
         cart.items = [];
         await cart.save();
       }
@@ -492,14 +510,13 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
         console.log("📦 Using items from request body:", items.length, "items");
         cartItems = items;
         
-        // Populate product info cho từng item
+        // ✅ Populate product info cho từng item
         for (const item of cartItems) {
-          const product = item.product;
-          const quantity = item.quantity;
-          const price = item.price || (product.salePrice || product.price);
+          const product = await Product.findById(item.product);
           if (!product) {
             return res.status(400).json({ message: `Sản phẩm ${item.product} không tồn tại!` });
           }
+          // Gán product object để dùng sau
           item.product = product;
         }
       } else {
@@ -526,8 +543,13 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
       for (const item of cartItems) {
         const product = item.product;
         const quantity = item.quantity;
-        const price = item.price;
+        const price = item.price || (product.salePrice || product.price);
         
+        // ✅ KIỂM TRA PRODUCT CÓ TỒN TẠI KHÔNG
+        if (!product || !product._id) {
+          return res.status(400).json({ message: `Sản phẩm không hợp lệ!` });
+        }
+
         if (product.status === 0) {
           return res.status(400).json({ message: `Sản phẩm ${product.name} đã bị ẩn!` });
         }
@@ -540,8 +562,9 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
 
         const itemSubtotal = price * quantity;
 
+        // ✅ ĐẢM BẢO product._id KHÔNG NULL
         orderItems.push({
-          product: product._id,
+          product: product._id, // ObjectId, không phải null
           quantity: quantity,
           color: item.color || "",
           size: item.size || "",
@@ -624,11 +647,23 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
       // Tính tổng tiền cuối cùng
       const total = subtotal + shippingFee - voucherDiscount;
 
+      // ✅ TẠO ORDER NUMBER
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const orderNumber = `ORD-${year}${month}${day}-${hours}${minutes}${seconds}-${random}`;
+
       // Tạo đơn hàng với paymentMethod = "momo" và paymentStatus = "pending"
       order = new Order({
+        orderNumber: orderNumber, // ✅ THÊM DÒNG NÀY
         customer: req.user.userId,
         shippingAddress,
-        items: orderItems,
+        items: orderItems, // ✅ Đảm bảo mỗi item có product là ObjectId
         subtotal,
         shippingFee,
         discount: 0,
@@ -941,5 +976,4 @@ router.get("/momo/status/:orderId", verifyToken, async (req, res) => {
 });
 
 module.exports = router;
-
 
