@@ -2131,44 +2131,116 @@
 
         // API Management
         const apiEndpoints = [
+            // Auth
             { method: 'POST', path: '/api/auth/login', description: 'Đăng nhập', auth: false },
+            { method: 'POST', path: '/api/auth/register', description: 'Đăng ký tài khoản', auth: false },
             { method: 'POST', path: '/api/auth/logout', description: 'Đăng xuất', auth: true },
             { method: 'PUT', path: '/api/auth/change-password', description: 'Đổi mật khẩu', auth: true },
             { method: 'GET', path: '/api/auth/me', description: 'Lấy thông tin user hiện tại', auth: true },
+            { method: 'PUT', path: '/api/auth/me', description: 'Cập nhật thông tin cá nhân', auth: true },
+            
+            // Users
             { method: 'GET', path: '/api/users', description: 'Lấy danh sách nhân viên', auth: true, admin: true },
             { method: 'GET', path: '/api/users/:id', description: 'Lấy chi tiết nhân viên', auth: true, admin: true },
             { method: 'POST', path: '/api/users', description: 'Thêm nhân viên mới', auth: true, admin: true },
             { method: 'PUT', path: '/api/users/:id', description: 'Cập nhật nhân viên', auth: true, admin: true },
             { method: 'DELETE', path: '/api/users/:id', description: 'Xóa nhân viên', auth: true, admin: true },
+            { method: 'GET', path: '/api/users/:id/orders', description: 'Lấy lịch sử đơn hàng của user', auth: true },
+            { method: 'GET', path: '/api/users/customers/list', description: 'Lấy danh sách khách hàng', auth: true, admin: true },
+            { method: 'PATCH', path: '/api/users/:id/ban', description: 'Khóa/Mở khóa tài khoản', auth: true, admin: true },
+            
+            // Categories
             { method: 'GET', path: '/api/categories', description: 'Lấy danh sách loại sản phẩm', auth: false },
             { method: 'GET', path: '/api/categories/all', description: 'Lấy tất cả loại sản phẩm', auth: false },
             { method: 'GET', path: '/api/categories/:id', description: 'Lấy chi tiết loại sản phẩm', auth: false },
+            { method: 'GET', path: '/api/categories/:id/products', description: 'Lấy sản phẩm theo danh mục', auth: false },
             { method: 'POST', path: '/api/categories', description: 'Thêm loại sản phẩm', auth: true },
             { method: 'PUT', path: '/api/categories/:id', description: 'Cập nhật loại sản phẩm', auth: true },
             { method: 'DELETE', path: '/api/categories/:id', description: 'Xóa loại sản phẩm', auth: true },
+            
+            // Products
             { method: 'GET', path: '/api/products', description: 'Lấy danh sách sản phẩm', auth: false },
             { method: 'GET', path: '/api/products/:id', description: 'Lấy chi tiết sản phẩm', auth: false },
             { method: 'POST', path: '/api/products', description: 'Thêm sản phẩm mới', auth: true },
             { method: 'PUT', path: '/api/products/:id', description: 'Cập nhật sản phẩm', auth: true },
             { method: 'DELETE', path: '/api/products/:id', description: 'Xóa/Ẩn sản phẩm', auth: true },
+            { method: 'GET', path: '/api/products/low-stock/all', description: 'Lấy sản phẩm tồn kho thấp', auth: true },
+            
+            // Cart
             { method: 'GET', path: '/api/cart', description: 'Lấy giỏ hàng', auth: true },
             { method: 'POST', path: '/api/cart', description: 'Thêm vào giỏ hàng', auth: true },
-            { method: 'PUT', path: '/api/cart/:id', description: 'Cập nhật giỏ hàng', auth: true },
-            { method: 'DELETE', path: '/api/cart/:id', description: 'Xóa khỏi giỏ hàng', auth: true },
+            { method: 'PUT', path: '/api/cart/:id', description: 'Cập nhật số lượng trong giỏ hàng', auth: true },
+            { method: 'DELETE', path: '/api/cart/:id', description: 'Xóa sản phẩm khỏi giỏ hàng', auth: true },
+            { method: 'DELETE', path: '/api/cart', description: 'Xóa toàn bộ giỏ hàng', auth: true },
+            
+            // Orders
             { method: 'GET', path: '/api/orders', description: 'Lấy danh sách đơn hàng', auth: true },
             { method: 'GET', path: '/api/orders/:id', description: 'Lấy chi tiết đơn hàng', auth: true },
+            { method: 'GET', path: '/api/orders/:id/timeline', description: 'Lấy timeline đơn hàng', auth: true },
             { method: 'POST', path: '/api/orders', description: 'Tạo đơn hàng mới', auth: true },
             { method: 'PUT', path: '/api/orders/:id/status', description: 'Cập nhật trạng thái đơn hàng', auth: true },
+            
+            // Addresses
+            { method: 'GET', path: '/api/addresses', description: 'Lấy danh sách địa chỉ', auth: true },
+            { method: 'GET', path: '/api/addresses/default', description: 'Lấy địa chỉ mặc định', auth: true },
+            { method: 'POST', path: '/api/addresses', description: 'Thêm địa chỉ mới', auth: true },
+            { method: 'PUT', path: '/api/addresses/:id', description: 'Cập nhật địa chỉ', auth: true },
+            { method: 'DELETE', path: '/api/addresses/:id', description: 'Xóa địa chỉ', auth: true },
+            
+            // Reviews
+            { method: 'GET', path: '/api/reviews/product/:productId', description: 'Lấy đánh giá của sản phẩm', auth: false },
+            { method: 'GET', path: '/api/reviews/my', description: 'Lấy đánh giá của tôi', auth: true },
+            { method: 'POST', path: '/api/reviews', description: 'Thêm đánh giá', auth: true },
+            { method: 'PUT', path: '/api/reviews/:id', description: 'Cập nhật đánh giá', auth: true },
+            { method: 'DELETE', path: '/api/reviews/:id', description: 'Xóa đánh giá', auth: true },
+            
+            // Favorites
+            { method: 'GET', path: '/api/favorites', description: 'Lấy danh sách yêu thích', auth: true },
+            { method: 'GET', path: '/api/favorites/check/:productId', description: 'Kiểm tra sản phẩm đã yêu thích', auth: true },
+            { method: 'POST', path: '/api/favorites/:productId', description: 'Thêm vào yêu thích', auth: true },
+            { method: 'DELETE', path: '/api/favorites/:productId', description: 'Xóa khỏi yêu thích', auth: true },
+            
+            // Notifications
+            { method: 'GET', path: '/api/notifications', description: 'Lấy danh sách thông báo', auth: true },
+            { method: 'PUT', path: '/api/notifications/:id/read', description: 'Đánh dấu đã đọc', auth: true },
+            { method: 'PUT', path: '/api/notifications/read-all', description: 'Đánh dấu tất cả đã đọc', auth: true },
+            { method: 'DELETE', path: '/api/notifications/:id', description: 'Xóa thông báo', auth: true },
+            
+            // Support
+            { method: 'GET', path: '/api/support', description: 'Lấy danh sách ticket hỗ trợ', auth: true },
+            { method: 'GET', path: '/api/support/:id', description: 'Lấy chi tiết ticket', auth: true },
+            { method: 'POST', path: '/api/support', description: 'Tạo ticket mới', auth: true },
+            { method: 'POST', path: '/api/support/:id/message', description: 'Gửi tin nhắn trong ticket', auth: true },
+            { method: 'PUT', path: '/api/support/:id', description: 'Cập nhật ticket (Admin)', auth: true, admin: true },
+            { method: 'PUT', path: '/api/support/:id/close', description: 'Đóng ticket', auth: true },
+            
+            // Vouchers
             { method: 'GET', path: '/api/vouchers', description: 'Lấy danh sách voucher', auth: false },
+            { method: 'GET', path: '/api/vouchers/validate/:code', description: 'Kiểm tra mã voucher', auth: false },
             { method: 'GET', path: '/api/vouchers/:id', description: 'Lấy chi tiết voucher', auth: false },
             { method: 'POST', path: '/api/vouchers/check', description: 'Kiểm tra voucher hợp lệ', auth: true },
             { method: 'POST', path: '/api/vouchers', description: 'Tạo voucher mới', auth: true, admin: true },
             { method: 'PUT', path: '/api/vouchers/:id', description: 'Cập nhật voucher', auth: true, admin: true },
             { method: 'DELETE', path: '/api/vouchers/:id', description: 'Xóa voucher', auth: true, admin: true },
+            
+            // Payment
+            { method: 'POST', path: '/api/payment/zalopay/create', description: 'Tạo thanh toán ZaloPay', auth: true },
+            { method: 'POST', path: '/api/payment/momo/create', description: 'Tạo thanh toán MoMo', auth: true },
+            { method: 'POST', path: '/api/payment/zalopay/callback', description: 'Callback ZaloPay', auth: false },
+            { method: 'POST', path: '/api/payment/momo/callback', description: 'Callback MoMo', auth: false },
+            
+            // Home
+            { method: 'GET', path: '/api/home', description: 'Lấy dữ liệu trang chủ', auth: false },
+            
+            // Dashboard
+            { method: 'GET', path: '/api/dashboard', description: 'Dashboard tổng quan', auth: true, admin: true },
+            
+            // Statistics
             { method: 'GET', path: '/api/statistics/overview', description: 'Tổng hợp thống kê', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/revenue', description: 'Báo cáo doanh thu', auth: true, admin: true },
             { method: 'GET', path: '/api/statistics/revenue/daily', description: 'Doanh thu theo ngày', auth: true, admin: true },
             { method: 'GET', path: '/api/statistics/revenue/monthly', description: 'Doanh thu theo tháng', auth: true, admin: true },
-            { method: 'GET', path: '/api/dashboard', description: 'Dashboard tổng quan', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/top-products', description: 'Sản phẩm bán chạy', auth: true, admin: true },
         ];
 
         function loadAPIs() {
