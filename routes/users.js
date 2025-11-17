@@ -246,4 +246,42 @@ router.get("/customers/list", verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
+// 🔒 Khóa/Mở khóa tài khoản khách hàng (Admin only)
+router.patch("/:id/ban", verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { isBanned } = req.body;
+
+    // Không cho khóa chính mình
+    if (userId === req.user.userId) {
+      return res.status(400).json({ message: "Không thể khóa chính tài khoản của bạn!" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng!" });
+    }
+
+    // Chỉ cho phép khóa customer
+    if (user.role !== "customer") {
+      return res.status(403).json({ message: "Chỉ có thể khóa tài khoản khách hàng!" });
+    }
+
+    user.isBanned = isBanned !== undefined ? isBanned : true;
+    user.updatedAt = Date.now();
+    await user.save();
+
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.json({
+      message: isBanned ? "Khóa tài khoản thành công!" : "Mở khóa tài khoản thành công!",
+      user: userResponse,
+    });
+  } catch (error) {
+    console.error("Ban/Unban user error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
 module.exports = router;

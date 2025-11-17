@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema({
   role: { type: String, enum: ["admin", "staff", "customer"], default: "customer" },
   avatar: { type: String, default: "" },
   isLocked: { type: Boolean, default: false }, // khóa sau 5 lần đăng nhập sai
+  isBanned: { type: Boolean, default: false }, // khóa vĩnh viễn bởi admin
   loginAttempts: { type: Number, default: 0 },
   lockUntil: { type: Date }, // Thời gian khóa đến khi nào
   createdAt: { type: Date, default: Date.now },

@@ -455,6 +455,7 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
 router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     const {
+      code,
       name,
       description,
       type,
@@ -473,7 +474,25 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
     const voucher = await Voucher.findById(req.params.id);
 
     if (!voucher) {
-      return res.status(404).json({ message: "Không tìm thấy voucher!" });
+      return res.status(404).json({ 
+        success: false,
+        message: "Không tìm thấy voucher!",
+        data: null
+      });
+    }
+
+    // Cho phép sửa code nếu code mới khác code cũ
+    if (code && code.toUpperCase() !== voucher.code) {
+      // Kiểm tra code mới có trùng với voucher khác không
+      const existingVoucher = await Voucher.findOne({ code: code.toUpperCase() });
+      if (existingVoucher && existingVoucher._id.toString() !== req.params.id) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Mã voucher đã tồn tại!",
+          data: null
+        });
+      }
+      voucher.code = code.toUpperCase();
     }
 
     if (name) voucher.name = name;
@@ -481,7 +500,9 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
     if (type) voucher.type = type;
     if (value !== undefined) voucher.value = value;
     if (minOrderValue !== undefined) voucher.minOrderValue = minOrderValue;
-    if (maxDiscount !== undefined) voucher.maxDiscount = maxDiscount;
+    if (maxDiscount !== undefined) {
+      voucher.maxDiscount = type === "percentage" ? maxDiscount : null;
+    }
     if (quantity !== undefined) voucher.quantity = quantity;
     if (startDate) voucher.startDate = new Date(startDate);
     if (endDate) voucher.endDate = new Date(endDate);
@@ -492,7 +513,27 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
 
     // Kiểm tra thời gian
     if (voucher.startDate >= voucher.endDate) {
-      return res.status(400).json({ message: "Ngày kết thúc phải sau ngày bắt đầu!" });
+      return res.status(400).json({ 
+        success: false,
+        message: "Ngày kết thúc phải sau ngày bắt đầu!",
+        data: null
+      });
+    }
+
+    // Kiểm tra giá trị
+    if (voucher.type === "percentage" && (voucher.value <= 0 || voucher.value > 100)) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Phần trăm giảm giá phải từ 1-100!",
+        data: null
+      });
+    }
+    if (voucher.type === "fixed" && voucher.value <= 0) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Số tiền giảm giá phải lớn hơn 0!",
+        data: null
+      });
     }
 
     await voucher.save();
@@ -500,13 +541,53 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
     await voucher.populate("applicableProducts", "name");
     await voucher.populate("applicableCategories", "name");
 
+    // Map voucher sang format Android app mong đợi
+    const now = new Date();
+    let statusStr = "active";
+    if (voucher.status === 0) {
+      statusStr = "inactive";
+    } else if (voucher.endDate < now) {
+      statusStr = "expired";
+    } else if (voucher.usedCount >= voucher.quantity) {
+      statusStr = "expired";
+    }
+
+    const mappedVoucher = {
+      _id: voucher._id.toString(),
+      code: voucher.code,
+      name: voucher.name,
+      description: voucher.description || "",
+      discount: voucher.value,
+      discountType: voucher.type,
+      minOrderAmount: voucher.minOrderValue || 0,
+      quantity: voucher.quantity,
+      used: voucher.usedCount || 0,
+      startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
+      endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
+      status: statusStr,
+      createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
+      updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
+    };
+
     res.json({
+      success: true,
       message: "Cập nhật voucher thành công!",
-      voucher,
+      data: mappedVoucher,
     });
   } catch (error) {
     console.error("Update voucher error:", error);
-    res.status(500).json({ message: "Lỗi server!" });
+    if (error.code === 11000) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Mã voucher đã tồn tại!",
+        data: null
+      });
+    }
+    res.status(500).json({ 
+      success: false,
+      message: "Lỗi server!",
+      data: null
+    });
   }
 });
 

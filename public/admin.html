@@ -1513,26 +1513,61 @@
                             <th>Tên</th>
                             <th>Email</th>
                             <th>Số điện thoại</th>
+                            <th>Trạng thái</th>
                             <th>Ngày tạo</th>
                             <th>Thao tác</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${customers.map(customer => `
+                        ${customers.map(customer => {
+                            const isBanned = customer.isBanned || false;
+                            const statusClass = isBanned ? 'status-cancelled' : 'status-completed';
+                            const statusText = isBanned ? 'Đã khóa' : 'Hoạt động';
+                            
+                            return `
                             <tr>
                                 <td>${customer.fullName || 'N/A'}</td>
                                 <td>${customer.email || 'N/A'}</td>
                                 <td>${customer.phone || 'N/A'}</td>
+                                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                                 <td>${new Date(customer.createdAt).toLocaleDateString('vi-VN')}</td>
                                 <td>
                                     <button class="btn-sm btn-view" onclick="viewCustomer('${customer._id}')">Xem</button>
+                                    <button class="btn-sm ${isBanned ? 'btn-edit' : 'btn-delete'}" onclick="toggleBanCustomer('${customer._id}', ${isBanned})">
+                                        ${isBanned ? 'Mở khóa' : 'Khóa'}
+                                    </button>
                                 </td>
                             </tr>
-                        `).join('')}
+                        `;
+                        }).join('')}
                     </tbody>
                 </table>
             `;
             document.getElementById('customersTable').innerHTML = table;
+        }
+
+        async function toggleBanCustomer(id, isCurrentlyBanned) {
+            const action = isCurrentlyBanned ? 'mở khóa' : 'khóa';
+            if (!confirm(`Bạn có chắc muốn ${action} tài khoản khách hàng này?`)) return;
+
+            try {
+                const response = await fetch(`${API_BASE}/users/${id}/ban`, {
+                    method: 'PATCH',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ isBanned: !isCurrentlyBanned })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert(result.message || `${action.charAt(0).toUpperCase() + action.slice(1)} thành công!`);
+                    loadCustomers(currentPage.customers);
+                } else {
+                    alert(result.message || 'Có lỗi xảy ra!');
+                }
+            } catch (error) {
+                console.error('Error toggling ban:', error);
+                alert('Lỗi kết nối server!');
+            }
         }
 
         // Load Statistics
@@ -2001,11 +2036,16 @@
 
                 const result = await response.json();
                 if (response.ok) {
-                    alert('Lưu thành công!');
+                    // Hỗ trợ cả format mới và cũ
+                    const message = result.message || (result.success ? 'Lưu thành công!' : 'Có lỗi xảy ra!');
+                    alert(message);
                     closeModal('voucherModal');
                     loadVouchers(currentPage.vouchers);
                 } else {
-                    document.getElementById('voucherError').textContent = result.message || 'Có lỗi xảy ra!';
+                    // Hỗ trợ cả format mới và cũ
+                    const errorMsg = result.message || (result.success === false ? result.message : 'Có lỗi xảy ra!');
+                    document.getElementById('voucherError').textContent = errorMsg;
+                    console.error('Error saving voucher:', result);
                 }
             } catch (error) {
                 document.getElementById('voucherError').textContent = 'Lỗi kết nối server!';

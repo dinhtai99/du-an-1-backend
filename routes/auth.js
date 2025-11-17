@@ -19,7 +19,14 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Tên đăng nhập hoặc mật khẩu không đúng!" });
     }
 
-    // Kiểm tra tài khoản bị khóa
+    // Kiểm tra tài khoản bị khóa vĩnh viễn bởi admin
+    if (user.isBanned) {
+      return res.status(403).json({ 
+        message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ admin để được hỗ trợ!" 
+      });
+    }
+
+    // Kiểm tra tài khoản bị khóa tạm thời (sau 5 lần đăng nhập sai)
     if (user.isLocked) {
       if (user.lockUntil && user.lockUntil > Date.now()) {
         const minutesLeft = Math.ceil((user.lockUntil - Date.now()) / 60000);
@@ -151,9 +158,13 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ message: "Mật khẩu phải có ít nhất 6 ký tự!" });
     }
 
-    // Kiểm tra username đã tồn tại
+    // Kiểm tra username hoặc email đã tồn tại
     const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
+      // Nếu tài khoản bị khóa, không cho đăng ký lại bằng email đó
+      if (existingUser.isBanned) {
+        return res.status(403).json({ message: "Email này đã bị khóa và không thể sử dụng!" });
+      }
       return res.status(400).json({ message: "Tên đăng nhập hoặc email đã tồn tại!" });
     }
 
