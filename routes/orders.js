@@ -234,7 +234,11 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
     // Tính tổng tiền cuối cùng
     const total = subtotal + shippingFee - voucherDiscount;
 
-    const finalPaymentMethod = paymentMethod || "COD";
+    // Xử lý paymentMethod: cash và COD đều là thanh toán tiền mặt
+    let finalPaymentMethod = paymentMethod || "COD";
+    if (finalPaymentMethod === "cash") {
+      finalPaymentMethod = "COD"; // Chuyển cash thành COD để thống nhất
+    }
 
     // Nếu là ZaloPay, redirect đến payment endpoint
     if (finalPaymentMethod === "zalopay") {
@@ -253,6 +257,8 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
     }
 
     // Tạo đơn hàng
+    // Với COD/cash: paymentStatus = "pending" (chờ thanh toán khi nhận hàng)
+    // Với online payment: paymentStatus sẽ được cập nhật sau khi thanh toán thành công
     const order = new Order({
       customer: req.user.userId,
       shippingAddress,
@@ -265,7 +271,7 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
       voucherDiscount,
       total: total > 0 ? total : 0,
       paymentMethod: finalPaymentMethod,
-      paymentStatus: finalPaymentMethod === "COD" ? "pending" : "pending",
+      paymentStatus: (finalPaymentMethod === "COD" || finalPaymentMethod === "cash") ? "pending" : "pending",
       status: "new",
       notes: notes || "",
       timeline: [{

@@ -1020,9 +1020,14 @@
         }
 
         function getAuthHeaders() {
+            if (!currentToken) {
+                // Nếu không có token, yêu cầu đăng nhập lại
+                alert('Phiên đăng nhập đã hết hạn! Vui lòng đăng nhập lại.');
+                logout();
+            }
             return {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentToken}`
+                'Authorization': `Bearer ${currentToken || ''}`
             };
         }
 
@@ -1573,13 +1578,123 @@
         // Load Statistics
         async function loadStatistics() {
             try {
-                const response = await fetch(`${API_BASE}/statistics/overview`, {
+                // Lấy filter từ UI
+                const filterType = document.getElementById('statFilterType')?.value || 'all';
+                const filterDate = document.getElementById('statFilterDate')?.value || '';
+                const filterStartDate = document.getElementById('statFilterStartDate')?.value || '';
+                const filterEndDate = document.getElementById('statFilterEndDate')?.value || '';
+                const filterMonth = document.getElementById('statFilterMonth')?.value || '';
+                const filterYear = document.getElementById('statFilterYear')?.value || '';
+                
+                // Xây dựng query params
+                let url = `${API_BASE}/statistics/overview`;
+                const params = new URLSearchParams();
+                
+                if (filterType === 'date' && filterDate) {
+                    // Filter theo ngày cụ thể
+                    params.append('startDate', filterDate);
+                    params.append('endDate', filterDate);
+                } else if (filterType === 'daterange' && filterStartDate && filterEndDate) {
+                    // Filter theo khoảng thời gian (từ ngày đến ngày)
+                    params.append('startDate', filterStartDate);
+                    params.append('endDate', filterEndDate);
+                } else if (filterType === 'month' && filterMonth && filterYear) {
+                    // Filter theo tháng/năm
+                    const startDate = new Date(parseInt(filterYear), parseInt(filterMonth) - 1, 1);
+                    const endDate = new Date(parseInt(filterYear), parseInt(filterMonth), 0, 23, 59, 59, 999);
+                    params.append('startDate', startDate.toISOString().split('T')[0]);
+                    params.append('endDate', endDate.toISOString().split('T')[0]);
+                } else if (filterType === 'year' && filterYear) {
+                    // Filter theo năm
+                    const startDate = new Date(parseInt(filterYear), 0, 1);
+                    const endDate = new Date(parseInt(filterYear), 11, 31, 23, 59, 59, 999);
+                    params.append('startDate', startDate.toISOString().split('T')[0]);
+                    params.append('endDate', endDate.toISOString().split('T')[0]);
+                }
+                
+                if (params.toString()) {
+                    url += '?' + params.toString();
+                }
+                
+                const response = await fetch(url, {
                     headers: getAuthHeaders()
                 });
                 const data = await response.json();
 
                 if (response.ok) {
-                    document.getElementById('statisticsContent').innerHTML = `
+                    // Tạo filter UI
+                    const currentDate = new Date();
+                    const currentYear = currentDate.getFullYear();
+                    const years = [];
+                    for (let i = currentYear; i >= currentYear - 5; i--) {
+                        years.push(i);
+                    }
+                    
+                    const months = [
+                        { value: '1', label: 'Tháng 1' },
+                        { value: '2', label: 'Tháng 2' },
+                        { value: '3', label: 'Tháng 3' },
+                        { value: '4', label: 'Tháng 4' },
+                        { value: '5', label: 'Tháng 5' },
+                        { value: '6', label: 'Tháng 6' },
+                        { value: '7', label: 'Tháng 7' },
+                        { value: '8', label: 'Tháng 8' },
+                        { value: '9', label: 'Tháng 9' },
+                        { value: '10', label: 'Tháng 10' },
+                        { value: '11', label: 'Tháng 11' },
+                        { value: '12', label: 'Tháng 12' }
+                    ];
+                    
+                    let filterHtml = `
+                        <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                            <h3 style="margin-bottom: 15px; color: #333;">🔍 Lọc thống kê</h3>
+                            <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: end;">
+                                <div style="min-width: 150px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Loại lọc:</label>
+                                    <select id="statFilterType" onchange="updateStatFilterUI()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
+                                        <option value="all" ${filterType === 'all' ? 'selected' : ''}>Tất cả</option>
+                                        <option value="date" ${filterType === 'date' ? 'selected' : ''}>Theo ngày</option>
+                                        <option value="daterange" ${filterType === 'daterange' ? 'selected' : ''}>Từ ngày đến ngày</option>
+                                        <option value="month" ${filterType === 'month' ? 'selected' : ''}>Theo tháng/năm</option>
+                                        <option value="year" ${filterType === 'year' ? 'selected' : ''}>Theo năm</option>
+                                    </select>
+                                </div>
+                                <div id="statFilterDateContainer" style="display: ${filterType === 'date' ? 'block' : 'none'}; min-width: 180px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Chọn ngày:</label>
+                                    <input type="date" id="statFilterDate" value="${filterDate}" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
+                                </div>
+                                <div id="statFilterDateRangeContainer" style="display: ${filterType === 'daterange' ? 'block' : 'none'};">
+                                    <div style="display: flex; gap: 10px;">
+                                        <div style="min-width: 180px;">
+                                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Từ ngày:</label>
+                                            <input type="date" id="statFilterStartDate" value="${filterStartDate}" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
+                                        </div>
+                                        <div style="min-width: 180px;">
+                                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Đến ngày:</label>
+                                            <input type="date" id="statFilterEndDate" value="${filterEndDate}" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="statFilterMonthContainer" style="display: ${filterType === 'month' ? 'block' : 'none'}; min-width: 150px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Chọn tháng:</label>
+                                    <select id="statFilterMonth" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
+                                        ${months.map(m => `<option value="${m.value}" ${filterMonth === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div id="statFilterYearContainer" style="display: ${filterType === 'year' || filterType === 'month' ? 'block' : 'none'}; min-width: 120px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Chọn năm:</label>
+                                    <select id="statFilterYear" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
+                                        ${years.map(y => `<option value="${y}" ${filterYear === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
+                                    </select>
+                                </div>
+                                <div>
+                                    <button onclick="loadStatistics()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap;">Áp dụng</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.getElementById('statisticsContent').innerHTML = filterHtml + `
                         <div class="stats-grid">
                             <div class="stat-card">
                                 <h4>Tổng đơn hàng</h4>
@@ -1609,8 +1724,23 @@
                     `;
                 }
             } catch (error) {
+                console.error('Load statistics error:', error);
                 document.getElementById('statisticsContent').innerHTML = '<div class="loading">Lỗi tải thống kê!</div>';
             }
+        }
+        
+        // Update filter UI based on filter type
+        function updateStatFilterUI() {
+            const filterType = document.getElementById('statFilterType')?.value || 'all';
+            const dateContainer = document.getElementById('statFilterDateContainer');
+            const dateRangeContainer = document.getElementById('statFilterDateRangeContainer');
+            const monthContainer = document.getElementById('statFilterMonthContainer');
+            const yearContainer = document.getElementById('statFilterYearContainer');
+            
+            if (dateContainer) dateContainer.style.display = filterType === 'date' ? 'block' : 'none';
+            if (dateRangeContainer) dateRangeContainer.style.display = filterType === 'daterange' ? 'block' : 'none';
+            if (monthContainer) monthContainer.style.display = filterType === 'month' ? 'block' : 'none';
+            if (yearContainer) yearContainer.style.display = (filterType === 'year' || filterType === 'month') ? 'block' : 'none';
         }
 
         // Change Password
@@ -1880,28 +2010,57 @@
                             // Xác định trạng thái hiển thị
                             let statusClass = 'status-cancelled';
                             let statusText = 'Không hợp lệ';
+                            const now = new Date();
                             
                             if (typeof status === 'string') {
                                 // Format mới: "active", "inactive", "expired"
-                                if (status === 'active') {
-                                    statusClass = 'status-completed';
-                                    statusText = 'Hoạt động';
-                                } else if (status === 'inactive') {
+                                // Nhưng cần kiểm tra thêm các điều kiện thực tế
+                                if (status === 'inactive' || status === 0) {
+                                    // Nếu status = 0 hoặc "inactive" → Dừng hoạt động (do admin tắt)
                                     statusClass = 'status-cancelled';
                                     statusText = 'Dừng hoạt động';
-                                } else if (status === 'expired') {
+                                } else if (status === 'expired' || usedCount >= quantity || endDate < now || startDate > now) {
+                                    // Hết hạn do: đã dùng hết, quá hạn, hoặc chưa đến thời gian
                                     statusClass = 'status-cancelled';
-                                    statusText = 'Hết hạn';
+                                    if (usedCount >= quantity) {
+                                        statusText = 'Hết hạn (đã dùng hết)';
+                                    } else if (endDate < now) {
+                                        statusText = 'Hết hạn (quá thời gian)';
+                                    } else if (startDate > now) {
+                                        statusText = 'Chưa có hiệu lực';
+                                    } else {
+                                        statusText = 'Hết hạn';
+                                    }
+                                } else if (status === 'active' || status === 1) {
+                                    // Hoạt động bình thường
+                                    statusClass = 'status-completed';
+                                    statusText = 'Hoạt động';
                                 }
                             } else {
-                                // Format cũ: 0 hoặc 1
-                                const now = new Date();
-                                const isValid = status === 1 && 
-                                              quantity > usedCount &&
-                                              startDate <= now &&
-                                              endDate >= now;
-                                statusClass = isValid ? 'status-completed' : 'status-cancelled';
-                                statusText = isValid ? 'Hợp lệ' : 'Không hợp lệ';
+                                // Format cũ: 0 hoặc 1 (number)
+                                if (status === 0) {
+                                    // Admin đã tắt voucher
+                                    statusClass = 'status-cancelled';
+                                    statusText = 'Dừng hoạt động';
+                                } else if (status === 1) {
+                                    // Kiểm tra các điều kiện
+                                    if (usedCount >= quantity) {
+                                        statusClass = 'status-cancelled';
+                                        statusText = 'Hết hạn (đã dùng hết)';
+                                    } else if (endDate < now) {
+                                        statusClass = 'status-cancelled';
+                                        statusText = 'Hết hạn (quá thời gian)';
+                                    } else if (startDate > now) {
+                                        statusClass = 'status-cancelled';
+                                        statusText = 'Chưa có hiệu lực';
+                                    } else {
+                                        statusClass = 'status-completed';
+                                        statusText = 'Hoạt động';
+                                    }
+                                } else {
+                                    statusClass = 'status-cancelled';
+                                    statusText = 'Không hợp lệ';
+                                }
                             }
                             
                             return `
@@ -1998,6 +2157,14 @@
 
         document.getElementById('voucherForm').addEventListener('submit', async (e) => {
             e.preventDefault();
+            
+            // Xóa thông báo lỗi cũ
+            const errorElement = document.getElementById('voucherError');
+            if (errorElement) {
+                errorElement.textContent = '';
+                errorElement.style.display = 'none';
+            }
+            
             const id = document.getElementById('voucherId').value;
             
             const parseIds = (str) => {
@@ -2025,30 +2192,79 @@
                 data.maxDiscount = parseFloat(document.getElementById('voucherMaxDiscount').value);
             }
 
+            console.log('💾 Saving voucher:', { id, data });
+
             try {
+                // Kiểm tra token trước khi gửi request
+                if (!currentToken) {
+                    alert('Phiên đăng nhập đã hết hạn! Vui lòng đăng nhập lại.');
+                    logout();
+                    return;
+                }
+
                 const url = id ? `${API_BASE}/vouchers/${id}` : `${API_BASE}/vouchers`;
                 const method = id ? 'PUT' : 'POST';
+                
+                console.log('📤 Sending request:', { url, method });
+                
                 const response = await fetch(url, {
                     method,
                     headers: getAuthHeaders(),
                     body: JSON.stringify(data)
                 });
 
-                const result = await response.json();
+                console.log('📥 Response status:', response.status);
+
+                let result;
+                try {
+                    result = await response.json();
+                    console.log('📦 Response data:', result);
+                } catch (jsonError) {
+                    console.error('❌ JSON parse error:', jsonError);
+                    const text = await response.text();
+                    console.error('📄 Response text:', text);
+                    if (errorElement) {
+                        errorElement.textContent = 'Lỗi: Server trả về dữ liệu không hợp lệ!';
+                        errorElement.style.display = 'block';
+                    } else {
+                        alert('Lỗi: Server trả về dữ liệu không hợp lệ!');
+                    }
+                    return;
+                }
+
                 if (response.ok) {
                     // Hỗ trợ cả format mới và cũ
-                    const message = result.message || (result.success ? 'Lưu thành công!' : 'Có lỗi xảy ra!');
+                    const message = result.message || result.success?.message || (result.success ? 'Lưu thành công!' : 'Có lỗi xảy ra!');
                     alert(message);
                     closeModal('voucherModal');
-                    loadVouchers(currentPage.vouchers);
+                    loadVouchers(currentPage.vouchers || 1);
                 } else {
+                    // Kiểm tra nếu lỗi do token
+                    if (response.status === 401 || response.status === 403) {
+                        if (result.message && (result.message.includes('Token') || result.message.includes('đăng nhập') || result.message.includes('Chưa đăng nhập'))) {
+                            alert('Phiên đăng nhập đã hết hạn! Vui lòng đăng nhập lại.');
+                            logout();
+                            return;
+                        }
+                    }
                     // Hỗ trợ cả format mới và cũ
                     const errorMsg = result.message || (result.success === false ? result.message : 'Có lỗi xảy ra!');
-                    document.getElementById('voucherError').textContent = errorMsg;
-                    console.error('Error saving voucher:', result);
+                    if (errorElement) {
+                        errorElement.textContent = errorMsg;
+                        errorElement.style.display = 'block';
+                    } else {
+                        alert(errorMsg);
+                    }
+                    console.error('❌ Error saving voucher:', result);
                 }
             } catch (error) {
-                document.getElementById('voucherError').textContent = 'Lỗi kết nối server!';
+                console.error('❌ Network error:', error);
+                if (errorElement) {
+                    errorElement.textContent = 'Lỗi kết nối server! Vui lòng thử lại.';
+                    errorElement.style.display = 'block';
+                } else {
+                    alert('Lỗi kết nối server! Vui lòng thử lại.');
+                }
             }
         });
 
@@ -2165,6 +2381,7 @@
             { method: 'PUT', path: '/api/products/:id', description: 'Cập nhật sản phẩm', auth: true },
             { method: 'DELETE', path: '/api/products/:id', description: 'Xóa/Ẩn sản phẩm', auth: true },
             { method: 'GET', path: '/api/products/low-stock/all', description: 'Lấy sản phẩm tồn kho thấp', auth: true },
+            { method: 'GET', path: '/api/products/export/excel', description: 'Xuất Excel sản phẩm', auth: true },
             
             // Cart
             { method: 'GET', path: '/api/cart', description: 'Lấy giỏ hàng', auth: true },
@@ -2179,6 +2396,7 @@
             { method: 'GET', path: '/api/orders/:id/timeline', description: 'Lấy timeline đơn hàng', auth: true },
             { method: 'POST', path: '/api/orders', description: 'Tạo đơn hàng mới', auth: true },
             { method: 'PUT', path: '/api/orders/:id/status', description: 'Cập nhật trạng thái đơn hàng', auth: true },
+            { method: 'PUT', path: '/api/orders/:id/cancel', description: 'Hủy đơn hàng (khách hàng)', auth: true },
             
             // Addresses
             { method: 'GET', path: '/api/addresses', description: 'Lấy danh sách địa chỉ', auth: true },
@@ -2228,19 +2446,35 @@
             { method: 'POST', path: '/api/payment/momo/create', description: 'Tạo thanh toán MoMo', auth: true },
             { method: 'POST', path: '/api/payment/zalopay/callback', description: 'Callback ZaloPay', auth: false },
             { method: 'POST', path: '/api/payment/momo/callback', description: 'Callback MoMo', auth: false },
+            { method: 'GET', path: '/api/payment/zalopay/status/:orderId', description: 'Kiểm tra trạng thái ZaloPay', auth: true },
+            { method: 'GET', path: '/api/payment/momo/status/:orderId', description: 'Kiểm tra trạng thái MoMo', auth: true },
+            { method: 'GET', path: '/api/payment/momo/return', description: 'Return URL MoMo', auth: false },
             
             // Home
             { method: 'GET', path: '/api/home', description: 'Lấy dữ liệu trang chủ', auth: false },
             
             // Dashboard
             { method: 'GET', path: '/api/dashboard', description: 'Dashboard tổng quan', auth: true, admin: true },
+            { method: 'GET', path: '/api/dashboard/revenue', description: 'Doanh thu dashboard', auth: true, admin: true },
+            { method: 'GET', path: '/api/dashboard/top-products', description: 'Top sản phẩm dashboard', auth: true, admin: true },
             
             // Statistics
             { method: 'GET', path: '/api/statistics/overview', description: 'Tổng hợp thống kê', auth: true, admin: true },
             { method: 'GET', path: '/api/statistics/revenue', description: 'Báo cáo doanh thu', auth: true, admin: true },
             { method: 'GET', path: '/api/statistics/revenue/daily', description: 'Doanh thu theo ngày', auth: true, admin: true },
             { method: 'GET', path: '/api/statistics/revenue/monthly', description: 'Doanh thu theo tháng', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/revenue/yearly', description: 'Doanh thu theo năm', auth: true, admin: true },
             { method: 'GET', path: '/api/statistics/top-products', description: 'Sản phẩm bán chạy', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/top-products/quantity', description: 'Top sản phẩm theo số lượng', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/top-products/revenue', description: 'Top sản phẩm theo doanh thu', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/low-stock', description: 'Sản phẩm tồn kho thấp', auth: true, admin: true },
+            { method: 'GET', path: '/api/statistics/payment-methods', description: 'Thống kê phương thức thanh toán', auth: true, admin: true },
+            
+            // Invoices
+            { method: 'POST', path: '/api/invoices', description: 'Tạo hóa đơn mới (khách hàng)', auth: true },
+            { method: 'GET', path: '/api/invoices', description: 'Lấy danh sách hóa đơn', auth: true },
+            { method: 'GET', path: '/api/invoices/:id', description: 'Lấy chi tiết hóa đơn', auth: true },
+            { method: 'PATCH', path: '/api/invoices/:id/status', description: 'Cập nhật trạng thái hóa đơn', auth: true },
         ];
 
         function loadAPIs() {

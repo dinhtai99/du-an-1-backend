@@ -303,13 +303,21 @@ router.get("/payment-methods", verifyToken, requireAdmin, async (req, res) => {
     const orders = await Order.find(query);
     const paymentStats = {
       COD: { count: 0, revenue: 0 },
+      cash: { count: 0, revenue: 0 },
       card: { count: 0, revenue: 0 },
       "e-wallet": { count: 0, revenue: 0 },
+      zalopay: { count: 0, revenue: 0 },
+      momo: { count: 0, revenue: 0 },
     };
 
     orders.forEach((order) => {
       const method = order.paymentMethod;
-      if (paymentStats[method]) {
+      // Gộp cash vào COD nếu có
+      const statKey = method === "cash" ? "COD" : method;
+      if (paymentStats[statKey]) {
+        paymentStats[statKey].count += 1;
+        paymentStats[statKey].revenue += order.total;
+      } else if (paymentStats[method]) {
         paymentStats[method].count += 1;
         paymentStats[method].revenue += order.total;
       }

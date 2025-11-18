@@ -28,10 +28,10 @@ const orderSchema = new mongoose.Schema({
   total: { type: Number, required: true }, // Tổng tiền cuối cùng
   paymentMethod: { 
     type: String, 
-    enum: ["COD", "card", "e-wallet", "zalopay", "momo"], 
+    enum: ["COD", "cash", "card", "e-wallet", "zalopay", "momo"], 
     default: "COD",
     required: true 
-  }, // COD / Thẻ / Ví điện tử / ZaloPay / MoMo
+  }, // COD (Thanh toán khi nhận hàng) / Tiền mặt / Thẻ / Ví điện tử / ZaloPay / MoMo
   paymentStatus: {
     type: String,
     enum: ["pending", "processing", "success", "failed", "cancelled"],
