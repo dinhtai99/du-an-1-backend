@@ -2004,15 +2004,22 @@
             try {
                 let html = '';
                 
+                // Xử lý filterParams - nếu rỗng thì chỉ dùng limit
+                const queryString = filterParams ? `${filterParams}&limit=100` : 'limit=100';
+                
                 switch(type) {
                     case 'orders':
                         // Chi tiết đơn hàng
-                        const ordersResponse = await fetch(`${API_BASE}/orders?${filterParams}&limit=100`, {
+                        const ordersResponse = await fetch(`${API_BASE}/orders?${queryString}`, {
                             headers: getAuthHeaders()
                         });
+                        if (!ordersResponse.ok) {
+                            throw new Error(ordersResponse.statusText || 'Lỗi tải dữ liệu');
+                        }
+                        
                         const ordersData = await ordersResponse.json();
                         
-                        if (ordersResponse.ok && ordersData.orders && ordersData.orders.length > 0) {
+                        if (ordersData.orders && ordersData.orders.length > 0) {
                             html = `
                                 <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -2072,7 +2079,18 @@
                         
                     case 'revenue':
                         // Biểu đồ doanh thu
-                        const revenueResponse = await fetch(`${API_BASE}/statistics/revenue/daily?${filterParams}`, {
+                        // Nếu không có filter, lấy 30 ngày gần nhất
+                        let revenueUrl = `${API_BASE}/statistics/revenue/daily`;
+                        if (filterParams) {
+                            revenueUrl += `?${filterParams}`;
+                        } else {
+                            // Lấy 30 ngày gần nhất
+                            const endDate = new Date();
+                            const startDate = new Date();
+                            startDate.setDate(endDate.getDate() - 30);
+                            revenueUrl += `?startDate=${startDate.toISOString().split('T')[0]}&endDate=${endDate.toISOString().split('T')[0]}`;
+                        }
+                        const revenueResponse = await fetch(revenueUrl, {
                             headers: getAuthHeaders()
                         });
                         const revenueData = revenueResponse.ok ? await revenueResponse.json() : [];
@@ -2111,7 +2129,7 @@
                         
                     case 'products':
                         // Danh sách sản phẩm
-                        const productsResponse = await fetch(`${API_BASE}/products?limit=100`, {
+                        const productsResponse = await fetch(`${API_BASE}/products?${queryString}`, {
                             headers: getAuthHeaders()
                         });
                         const productsData = productsResponse.ok ? await productsResponse.json() : {};
@@ -2159,7 +2177,7 @@
                         
                     case 'customers':
                         // Danh sách khách hàng
-                        const customersResponse = await fetch(`${API_BASE}/users/customers/list?limit=100`, {
+                        const customersResponse = await fetch(`${API_BASE}/users/customers/list?${queryString}`, {
                             headers: getAuthHeaders()
                         });
                         const customersData = customersResponse.ok ? await customersResponse.json() : {};
@@ -2274,7 +2292,18 @@
                 detailSection.innerHTML = html;
             } catch (error) {
                 console.error('Error loading stat detail:', error);
-                detailSection.innerHTML = '<div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; text-align: center; color: #dc3545;">Lỗi tải chi tiết. Vui lòng thử lại.</div>';
+                detailSection.innerHTML = `
+                    <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="color: #dc3545; margin: 0;">❌ Lỗi tải dữ liệu</h3>
+                            <button onclick="document.getElementById('statDetailSection').innerHTML = ''" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">Đóng</button>
+                        </div>
+                        <div style="text-align: center; padding: 20px; color: #6c757d;">
+                            <p>Không thể tải dữ liệu. Vui lòng thử lại sau.</p>
+                            <p style="font-size: 12px; margin-top: 10px; color: #999;">${error.message || 'Lỗi không xác định'}</p>
+                        </div>
+                    </div>
+                `;
             }
         }
 
