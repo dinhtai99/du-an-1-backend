@@ -36,7 +36,8 @@ app.get("/api", (req, res) => {
       statistics: "/api/statistics",
       support: "/api/support",
       vouchers: "/api/vouchers",
-      payment: "/api/payment"
+      payment: "/api/payment",
+      chat: "/api/chat"
     }
   });
 });
