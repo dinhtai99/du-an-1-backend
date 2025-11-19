@@ -3458,9 +3458,10 @@
             { method: 'DELETE', path: '/api/vouchers/:id', description: 'Xóa voucher', auth: true, admin: true },
             
             // Chat
-            { method: 'POST', path: '/api/chat/messages', description: 'Gửi tin nhắn', auth: true },
+            { method: 'POST', path: '/api/chat/messages', description: 'Gửi tin nhắn (Customer ↔ Admin)', auth: true },
             { method: 'GET', path: '/api/chat/messages', description: 'Lấy danh sách chat/tin nhắn', auth: true },
             { method: 'GET', path: '/api/chat/unread-count', description: 'Lấy số tin nhắn chưa đọc', auth: true },
+            { method: 'GET', path: '/api/chat/info', description: 'Lấy thông tin chat (cho Android app)', auth: true },
             
             // Payment
             { method: 'POST', path: '/api/payment/zalopay/create', description: 'Tạo thanh toán ZaloPay', auth: true },

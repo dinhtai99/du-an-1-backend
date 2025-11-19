@@ -4,8 +4,25 @@ const cors = require("cors");
 require("dotenv").config();
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// Cấu hình CORS cho Android app
+app.use(cors({
+  origin: '*', // Cho phép tất cả origin (có thể giới hạn sau)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
+
+// Middleware để log requests (debug)
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/chat')) {
+    console.log(`📡 ${req.method} ${req.path} - ${new Date().toISOString()}`);
+  }
+  next();
+});
+
+app.use(express.json({ limit: '10mb' })); // Tăng limit cho file upload (nếu cần)
+app.use(express.urlencoded({ extended: true }));
 
 // Serve static files from public directory
 app.use(express.static('public'));
