@@ -246,6 +246,13 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
     };
 
     // Gọi ZaloPay API để tạo payment order
+    console.log("📤 Creating ZaloPay order:", {
+      appTransId,
+      amount: order.total,
+      orderNumber: order.orderNumber,
+      itemCount: zalopayItems.length
+    });
+    
     const zalopayResult = await zalopayService.createOrder({
       app_trans_id: appTransId,
       amount: order.total,
@@ -254,10 +261,14 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       embed_data: JSON.stringify(embedData),
     });
 
+    console.log("📥 ZaloPay create order response:", zalopayResult);
+
     if (!zalopayResult.success) {
+      console.error("❌ ZaloPay create order failed:", zalopayResult);
       return res.status(400).json({
         message: "Không thể tạo đơn hàng thanh toán ZaloPay!",
         error: zalopayResult.return_message,
+        return_code: zalopayResult.return_code,
       });
     }
 
@@ -301,60 +312,140 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
  */
 router.post("/zalopay/callback", async (req, res) => {
   try {
+    console.log("📥 ZaloPay callback received:", JSON.stringify(req.body, null, 2));
+    
     // ZaloPay gửi callback với format: { data: {...}, mac: "..." }
-    const { data, mac } = req.body;
+    // Hoặc có thể là: { data: "string", mac: "..." } hoặc trực tiếp { ... }
+    let data, mac;
+    
+    if (req.body.data && typeof req.body.data === 'string') {
+      // Nếu data là string, parse nó
+      try {
+        data = JSON.parse(req.body.data);
+      } catch (e) {
+        data = req.body.data;
+      }
+    } else if (req.body.data && typeof req.body.data === 'object') {
+      data = req.body.data;
+    } else {
+      // Nếu không có data wrapper, có thể data đã ở root level
+      data = req.body;
+    }
+    
+    mac = req.body.mac || data.mac;
 
     if (!data || !mac) {
+      console.error("❌ ZaloPay callback: Missing data or mac", { body: req.body });
       return res.status(400).json({ return_code: -1, return_message: "Thiếu dữ liệu!" });
     }
 
+    // Loại bỏ mac khỏi data trước khi verify (nếu có)
+    const dataForVerify = { ...data };
+    if (dataForVerify.mac) {
+      delete dataForVerify.mac;
+    }
+    
     // Xác thực MAC
-    const isValid = zalopayService.verifyCallback({ data, mac });
+    const isValid = zalopayService.verifyCallback({ data: dataForVerify, mac });
     if (!isValid) {
-      console.error("ZaloPay callback MAC invalid:", { data, mac });
+      console.error("❌ ZaloPay callback MAC invalid:", { 
+        dataKeys: Object.keys(dataForVerify), 
+        mac,
+        hasKey2: !!zalopayService.key2,
+        calculatedMac: zalopayService.createMac(dataForVerify, zalopayService.key2)
+      });
       return res.status(400).json({ return_code: -1, return_message: "MAC không hợp lệ!" });
     }
+
+    console.log("✅ ZaloPay callback MAC verified");
 
     // Parse embed_data để lấy orderId
     let orderId = null;
     try {
-      const embedData = JSON.parse(data.embed_data || "{}");
-      orderId = embedData.orderId;
+      let embedDataStr = data.embed_data;
+      
+      // Xử lý các trường hợp embed_data
+      if (!embedDataStr) {
+        console.log("⚠️ embed_data is empty");
+      } else if (typeof embedDataStr === 'object') {
+        // Nếu đã là object, dùng trực tiếp
+        orderId = embedDataStr.orderId;
+        console.log("📦 OrderId from embed_data (object):", orderId);
+      } else if (typeof embedDataStr === 'string') {
+        // Nếu là string, thử parse
+        try {
+          const embedData = JSON.parse(embedDataStr);
+          orderId = embedData.orderId;
+          console.log("📦 OrderId from embed_data (parsed):", orderId);
+        } catch (parseError) {
+          console.error("⚠️ Failed to parse embed_data string:", parseError);
+          // Thử tìm orderId trực tiếp trong string
+          const orderIdMatch = embedDataStr.match(/"orderId"\s*:\s*"([^"]+)"/);
+          if (orderIdMatch) {
+            orderId = orderIdMatch[1];
+            console.log("📦 OrderId extracted from string:", orderId);
+          }
+        }
+      }
     } catch (e) {
-      console.error("Parse embed_data error:", e);
+      console.error("⚠️ Parse embed_data error:", e);
     }
 
-    // Nếu không có orderId trong embed_data, thử parse từ app_trans_id
+    // Nếu không có orderId trong embed_data, thử tìm theo zalopayOrderId
     if (!orderId && data.app_trans_id) {
-      // app_trans_id format: YYMMDD_orderId
-      const parts = data.app_trans_id.split("_");
-      if (parts.length > 1) {
-        // Tìm order theo zalopayOrderId
-        const order = await Order.findOne({ zalopayOrderId: data.app_trans_id });
-        if (order) {
-          orderId = order._id.toString();
+      console.log("🔍 Searching order by zalopayOrderId:", data.app_trans_id);
+      // Tìm order theo zalopayOrderId (app_trans_id)
+      const order = await Order.findOne({ zalopayOrderId: data.app_trans_id });
+      if (order) {
+        orderId = order._id.toString();
+        console.log("✅ Found order by zalopayOrderId:", orderId);
+      } else {
+        // Thử parse từ app_trans_id format: YYMMDD_orderId
+        const parts = data.app_trans_id.split("_");
+        if (parts.length > 1) {
+          // Tìm order theo _id (phần sau dấu _)
+          const possibleOrderId = parts.slice(1).join("_");
+          const orderById = await Order.findById(possibleOrderId);
+          if (orderById) {
+            orderId = orderById._id.toString();
+            console.log("✅ Found order by parsed ID:", orderId);
+          }
         }
       }
     }
 
     if (!orderId) {
-      console.error("Cannot find orderId from callback:", data);
+      console.error("❌ Cannot find orderId from callback:", {
+        app_trans_id: data.app_trans_id,
+        embed_data: data.embed_data,
+        fullData: data
+      });
       return res.status(400).json({ return_code: -1, return_message: "Không tìm thấy đơn hàng!" });
     }
 
     // Tìm đơn hàng
     const order = await Order.findById(orderId);
     if (!order) {
+      console.error("❌ Order not found:", orderId);
       return res.status(404).json({ return_code: -1, return_message: "Không tìm thấy đơn hàng!" });
     }
 
+    console.log("✅ Order found:", {
+      orderId: order._id,
+      orderNumber: order.orderNumber,
+      currentPaymentStatus: order.paymentStatus,
+      callbackStatus: data.status
+    });
+
     // Kiểm tra nếu đã xử lý callback này rồi (idempotency)
     if (order.paymentStatus === "success" && order.status !== "new") {
+      console.log("ℹ️ Callback already processed, returning OK");
       return res.json({ return_code: 1, return_message: "OK" });
     }
 
     // Xử lý kết quả thanh toán
     if (data.status === 1) {
+      console.log("✅ Payment successful, processing...");
       // Thanh toán thành công
       order.paymentStatus = "success";
       order.zalopayMac = mac;
@@ -395,8 +486,11 @@ router.post("/zalopay/callback", async (req, res) => {
         cart.items = [];
         await cart.save();
       }
+      
+      console.log("✅ Payment processing completed successfully");
     } else {
       // Thanh toán thất bại
+      console.log("❌ Payment failed:", data.return_message || "Unknown error");
       order.paymentStatus = "failed";
       
       if (!order.timeline) {

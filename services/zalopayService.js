@@ -38,6 +38,20 @@ class ZaloPayService {
    */
   async createOrder(orderInfo) {
     try {
+      // Validate config
+      if (!this.appId || !this.key1 || !this.key2) {
+        console.error("❌ ZaloPay config missing:", {
+          hasAppId: !!this.appId,
+          hasKey1: !!this.key1,
+          hasKey2: !!this.key2
+        });
+        return {
+          success: false,
+          return_code: -1,
+          return_message: "ZaloPay chưa được cấu hình đầy đủ! Vui lòng kiểm tra biến môi trường.",
+        };
+      }
+
       const {
         app_trans_id,
         amount,
@@ -45,6 +59,16 @@ class ZaloPayService {
         item,
         embed_data = "{}",
       } = orderInfo;
+
+      // Validate input
+      if (!app_trans_id || !amount || !description || !item) {
+        console.error("❌ ZaloPay create order: Missing required fields", orderInfo);
+        return {
+          success: false,
+          return_code: -1,
+          return_message: "Thiếu thông tin bắt buộc!",
+        };
+      }
 
       // Tạo timestamp (milliseconds)
       const app_time = Date.now();
@@ -67,12 +91,27 @@ class ZaloPayService {
       // Tạo MAC
       data.mac = this.createMac(data, this.key1);
 
+      console.log("📤 ZaloPay API request:", {
+        endpoint: this.endpoint,
+        app_id: this.appId,
+        app_trans_id: app_trans_id,
+        amount: amount,
+        callback_url: this.callbackUrl
+      });
+
       // Gọi API ZaloPay
       const response = await axios.post(this.endpoint, null, {
         params: data,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
+        timeout: 30000, // 30 seconds timeout
+      });
+
+      console.log("📥 ZaloPay API response:", {
+        status: response.status,
+        return_code: response.data?.return_code,
+        return_message: response.data?.return_message
       });
 
       if (response.data && response.data.return_code === 1) {
@@ -85,6 +124,7 @@ class ZaloPayService {
           order_token: response.data.order_token,
         };
       } else {
+        console.error("❌ ZaloPay API error:", response.data);
         return {
           success: false,
           return_code: response.data?.return_code || -1,
@@ -92,11 +132,15 @@ class ZaloPayService {
         };
       }
     } catch (error) {
-      console.error("ZaloPay create order error:", error);
+      console.error("❌ ZaloPay create order error:", {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
       return {
         success: false,
         return_code: -1,
-        return_message: error.message || "Lỗi kết nối ZaloPay",
+        return_message: error.response?.data?.return_message || error.message || "Lỗi kết nối ZaloPay",
       };
     }
   }
@@ -110,11 +154,33 @@ class ZaloPayService {
     try {
       const { data, mac } = callbackData;
 
-      // Tạo MAC từ data với key2
-      const calculatedMac = this.createMac(data, this.key2);
+      if (!data || !mac || !this.key2) {
+        console.error("ZaloPay verify callback: Missing data, mac, or key2");
+        return false;
+      }
 
-      // So sánh MAC
-      return calculatedMac === mac;
+      // Tạo bản sao của data và loại bỏ mac nếu có (để tính MAC chính xác)
+      const dataForMac = { ...data };
+      if (dataForMac.mac) {
+        delete dataForMac.mac;
+      }
+
+      // Tạo MAC từ data với key2
+      const calculatedMac = this.createMac(dataForMac, this.key2);
+
+      // So sánh MAC (case-insensitive để tránh lỗi)
+      const isValid = calculatedMac.toLowerCase() === mac.toLowerCase();
+      
+      if (!isValid) {
+        console.error("ZaloPay MAC mismatch:", {
+          calculated: calculatedMac,
+          received: mac,
+          dataKeys: Object.keys(dataForMac),
+          dataSample: JSON.stringify(dataForMac).substring(0, 200)
+        });
+      }
+      
+      return isValid;
     } catch (error) {
       console.error("ZaloPay verify callback error:", error);
       return false;

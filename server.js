@@ -70,6 +70,7 @@ const supportRoutes = require("./routes/support");
 const voucherRoutes = require("./routes/vouchers");
 const paymentRoutes = require("./routes/payment");
 const invoiceRoutes = require("./routes/invoices");
+const chatRoutes = require("./routes/chat");
 
 // Use routes
 app.use("/api/auth", authRoutes);
@@ -89,6 +90,7 @@ app.use("/api/support", supportRoutes);
 app.use("/api/vouchers", voucherRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/invoices", invoiceRoutes);
+app.use("/api/chat", chatRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
