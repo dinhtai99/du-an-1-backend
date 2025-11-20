@@ -1,5 +1,6 @@
 const axios = require("axios");
 const crypto = require("crypto");
+const { URLSearchParams } = require("url");
 
 class ZaloPayService {
   constructor() {
@@ -13,17 +14,41 @@ class ZaloPayService {
   }
 
   /**
-   * Tạo MAC (Message Authentication Code) để xác thực request
+   * Tạo chữ ký HMAC SHA256 theo chuẩn ZaloPay
    */
-  createMac(data, key) {
-    const dataString = Object.keys(data)
-      .sort()
-      .map((key) => `${key}=${data[key]}`)
-      .join("&");
-    return crypto
-      .createHmac("sha256", key)
-      .update(dataString)
-      .digest("hex");
+  sign(dataString, key) {
+    return crypto.createHmac("sha256", key).update(dataString).digest("hex");
+  }
+
+  /**
+   * Chuẩn hóa chuỗi MAC cho request create order
+   */
+  buildCreateOrderMacString({ app_id, app_trans_id, app_user, amount, app_time, embed_data, item }) {
+    return `${app_id}|${app_trans_id}|${app_user}|${amount}|${app_time}|${embed_data}|${item}`;
+  }
+
+  /**
+   * Chuỗi MAC cho callback verification
+   * Format chuẩn: app_id|app_trans_id|pmcid|bank_code|amount|discount_amount|status
+   */
+  buildCallbackMacString(data) {
+    if (!data) return "";
+    const appId = data.app_id || data.appid || "";
+    const appTransId = data.app_trans_id || data.apptransid || "";
+    const pmcId = data.pmc_id || data.pmcid || "";
+    const bankCode = data.bank_code || data.bankcode || "";
+    const amount = data.amount ?? 0;
+    const discountAmount = data.discount_amount ?? data.discountamount ?? 0;
+    const status = data.status ?? 0;
+    return `${appId}|${appTransId}|${pmcId}|${bankCode}|${amount}|${discountAmount}|${status}`;
+  }
+
+  /**
+   * Chuỗi MAC cho query order
+   * Format chuẩn: app_id|app_trans_id|app_time
+   */
+  buildQueryMacString({ app_id, app_trans_id, app_time }) {
+    return `${app_id}|${app_trans_id}|${app_time}`;
   }
 
   /**
@@ -88,8 +113,8 @@ class ZaloPayService {
         mac: "", // Sẽ tính sau
       };
 
-      // Tạo MAC
-      data.mac = this.createMac(data, this.key1);
+      const macString = this.buildCreateOrderMacString(data);
+      data.mac = this.sign(macString, this.key1);
 
       console.log("📤 ZaloPay API request:", {
         endpoint: this.endpoint,
@@ -99,9 +124,10 @@ class ZaloPayService {
         callback_url: this.callbackUrl
       });
 
+      const formBody = new URLSearchParams(data).toString();
+
       // Gọi API ZaloPay
-      const response = await axios.post(this.endpoint, null, {
-        params: data,
+      const response = await axios.post(this.endpoint, formBody, {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
@@ -165,8 +191,8 @@ class ZaloPayService {
         delete dataForMac.mac;
       }
 
-      // Tạo MAC từ data với key2
-      const calculatedMac = this.createMac(dataForMac, this.key2);
+      const macString = this.buildCallbackMacString(dataForMac);
+      const calculatedMac = this.sign(macString, this.key2);
 
       // So sánh MAC (case-insensitive để tránh lỗi)
       const isValid = calculatedMac.toLowerCase() === mac.toLowerCase();
@@ -199,18 +225,20 @@ class ZaloPayService {
       const data = {
         app_id: this.appId,
         app_trans_id: appTransId,
+        app_time: appTime,
         mac: "",
       };
 
-      // Tạo MAC
-      data.mac = this.createMac(data, this.key1);
+      const macString = this.buildQueryMacString(data);
+      data.mac = this.sign(macString, this.key1);
 
       const queryUrl = this.env === "production"
         ? "https://openapi.zalopay.vn/v2/query"
         : "https://sb-openapi.zalopay.vn/v2/query";
 
-      const response = await axios.post(queryUrl, null, {
-        params: data,
+      const formBody = new URLSearchParams(data).toString();
+
+      const response = await axios.post(queryUrl, formBody, {
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
         },
