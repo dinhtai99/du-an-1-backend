@@ -369,6 +369,13 @@ router.put("/:id/status", verifyToken, requireAdminOrStaff, async (req, res) => 
     // Đánh dấu hoàn thành
     if (status === "completed") {
       order.completedAt = new Date();
+      
+      // Với đơn COD/cash: Khi hoàn thành nghĩa là đã thanh toán
+      // Tự động cập nhật paymentStatus thành "success"
+      if ((order.paymentMethod === "COD" || order.paymentMethod === "cash") && 
+          order.paymentStatus === "pending") {
+        order.paymentStatus = "success";
+      }
     }
 
     // Thêm vào timeline

@@ -230,7 +230,7 @@ router.get("/me", verifyToken, async (req, res) => {
 // ✏️ Cập nhật thông tin cá nhân (Customer)
 router.put("/me", verifyToken, async (req, res) => {
   try {
-    const { fullName, email, phone, gender, dateOfBirth, avatar } = req.body;
+const { fullName, email, phone, address, gender, dateOfBirth, avatar } = req.body;
     const user = await User.findById(req.user.userId);
 
     if (!user) {
@@ -251,7 +251,7 @@ router.put("/me", verifyToken, async (req, res) => {
     if (gender) user.gender = gender;
     if (dateOfBirth) user.dateOfBirth = new Date(dateOfBirth);
     if (avatar !== undefined) user.avatar = avatar;
-
+    if (address !== undefined) user.address = address; // ✅ THÊM DÒNG NÀY
     user.updatedAt = Date.now();
     await user.save();
 

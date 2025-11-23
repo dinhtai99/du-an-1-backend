@@ -16,7 +16,7 @@ const { verifyToken, requireCustomer } = require("../middleware/authMiddleware")
  */
 router.post("/zalopay/create", verifyToken, async (req, res) => {
   try {
-    const { shippingAddress, notes, voucherCode, orderId, items } = req.body;
+    const { shippingAddress, addressId, notes, voucherCode, orderId, items } = req.body;
 
     let order;
 
@@ -34,8 +34,38 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       }
     } else {
       // Tạo đơn hàng mới từ giỏ hàng
-      if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
-        return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng!" });
+      // Lấy địa chỉ giao hàng
+      let finalShippingAddress = null;
+      
+      if (addressId) {
+        console.log('📍 ZaloPay: Lấy địa chỉ từ ID:', addressId);
+        const Address = require('../models/Address');
+        const address = await Address.findOne({ _id: addressId, user: req.user.userId });
+        if (!address) {
+          return res.status(400).json({ message: "Không tìm thấy địa chỉ hoặc địa chỉ không thuộc về bạn!" });
+        }
+        finalShippingAddress = {
+          fullName: address.fullName,
+          phone: address.phone,
+          address: address.address,
+          ward: address.ward || "",
+          district: address.district || "",
+          city: address.city
+        };
+      } else if (shippingAddress) {
+        if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
+          return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng! (Cần: fullName, phone, address, city)" });
+        }
+        finalShippingAddress = {
+          fullName: String(shippingAddress.fullName).trim(),
+          phone: String(shippingAddress.phone).trim(),
+          address: String(shippingAddress.address).trim(),
+          ward: shippingAddress.ward ? String(shippingAddress.ward).trim() : "",
+          district: shippingAddress.district ? String(shippingAddress.district).trim() : "",
+          city: String(shippingAddress.city).trim()
+        };
+      } else {
+        return res.status(400).json({ message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)" });
       }
 
       // Lấy giỏ hàng
@@ -198,7 +228,7 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       order = new Order({
         orderNumber: orderNumber, // ✅ THÊM DÒNG NÀY
         customer: req.user.userId,
-        shippingAddress,
+        shippingAddress: finalShippingAddress,
         items: orderItems,
         subtotal,
         shippingFee,
@@ -375,7 +405,7 @@ router.post("/zalopay/callback", async (req, res) => {
         // Nếu là string, thử parse
         try {
           const embedData = JSON.parse(embedDataStr);
-          orderId = embedData.orderId;
+      orderId = embedData.orderId;
           console.log("📦 OrderId from embed_data (parsed):", orderId);
         } catch (parseError) {
           console.error("⚠️ Failed to parse embed_data string:", parseError);
@@ -573,7 +603,7 @@ router.get("/zalopay/status/:orderId", verifyToken, async (req, res) => {
  */
 router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
   try {
-    const { shippingAddress, notes, voucherCode, orderId, items } = req.body;
+    const { shippingAddress, addressId, notes, voucherCode, orderId, items } = req.body;
 
     let order;
     let cart = null;
@@ -592,8 +622,38 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
       }
     } else {
       // Tạo đơn hàng mới từ giỏ hàng
-      if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
-        return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng!" });
+      // Lấy địa chỉ giao hàng
+      let finalShippingAddress = null;
+      
+      if (addressId) {
+        console.log('📍 MoMo: Lấy địa chỉ từ ID:', addressId);
+        const Address = require('../models/Address');
+        const address = await Address.findOne({ _id: addressId, user: req.user.userId });
+        if (!address) {
+          return res.status(400).json({ message: "Không tìm thấy địa chỉ hoặc địa chỉ không thuộc về bạn!" });
+        }
+        finalShippingAddress = {
+          fullName: address.fullName,
+          phone: address.phone,
+          address: address.address,
+          ward: address.ward || "",
+          district: address.district || "",
+          city: address.city
+        };
+      } else if (shippingAddress) {
+        if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
+          return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng! (Cần: fullName, phone, address, city)" });
+        }
+        finalShippingAddress = {
+          fullName: String(shippingAddress.fullName).trim(),
+          phone: String(shippingAddress.phone).trim(),
+          address: String(shippingAddress.address).trim(),
+          ward: shippingAddress.ward ? String(shippingAddress.ward).trim() : "",
+          district: shippingAddress.district ? String(shippingAddress.district).trim() : "",
+          city: String(shippingAddress.city).trim()
+        };
+      } else {
+        return res.status(400).json({ message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)" });
       }
 
       // Lấy giỏ hàng
@@ -756,7 +816,7 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
       order = new Order({
         orderNumber: orderNumber, // ✅ THÊM DÒNG NÀY
         customer: req.user.userId,
-        shippingAddress,
+        shippingAddress: finalShippingAddress,
         items: orderItems, // ✅ Đảm bảo mỗi item có product là ObjectId
         subtotal,
         shippingFee,

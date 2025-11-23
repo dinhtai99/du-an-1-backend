@@ -3,21 +3,27 @@ const router = express.Router();
 const Review = require("../models/Review");
 const Product = require("../models/Product");
 const Order = require("../models/Order");
-const { verifyToken, requireCustomer } = require("../middleware/authMiddleware");
+const { verifyToken, requireCustomer, requireAdminOrStaff } = require("../middleware/authMiddleware");
 
-// ⭐ Lấy đánh giá của sản phẩm
+// ⭐ Lấy đánh giá của sản phẩm (chỉ hiển thị những đánh giá visible)
 router.get("/product/:productId", async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const reviews = await Review.find({ product: req.params.productId })
+    const reviews = await Review.find({ 
+      product: req.params.productId,
+      isVisible: true // Chỉ lấy đánh giá đang hiển thị
+    })
       .populate("user", "fullName avatar")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
-    const total = await Review.countDocuments({ product: req.params.productId });
+    const total = await Review.countDocuments({ 
+      product: req.params.productId,
+      isVisible: true 
+    });
 
     res.json({
       reviews,
@@ -94,9 +100,11 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
 
     await review.save();
 
-    // Cập nhật rating trung bình của sản phẩm
-    const reviews = await Review.find({ product: productId });
-    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+    // Cập nhật rating trung bình của sản phẩm (chỉ tính những đánh giá visible)
+    const reviews = await Review.find({ product: productId, isVisible: true });
+    const avgRating = reviews.length > 0 
+      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+      : 0;
     
     await Product.findByIdAndUpdate(productId, {
       rating: avgRating,
@@ -140,9 +148,11 @@ router.put("/:id", verifyToken, requireCustomer, async (req, res) => {
 
     await review.save();
 
-    // Cập nhật rating trung bình của sản phẩm
-    const reviews = await Review.find({ product: review.product });
-    const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+    // Cập nhật rating trung bình của sản phẩm (chỉ tính những đánh giá visible)
+    const reviews = await Review.find({ product: review.product, isVisible: true });
+    const avgRating = reviews.length > 0 
+      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+      : 0;
     
     await Product.findByIdAndUpdate(review.product, {
       rating: avgRating,
@@ -171,8 +181,8 @@ router.delete("/:id", verifyToken, requireCustomer, async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy đánh giá!" });
     }
 
-    // Cập nhật rating trung bình của sản phẩm
-    const reviews = await Review.find({ product: review.product });
+    // Cập nhật rating trung bình của sản phẩm (chỉ tính những đánh giá visible)
+    const reviews = await Review.find({ product: review.product, isVisible: true });
     const avgRating = reviews.length > 0 
       ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
       : 0;
@@ -185,6 +195,117 @@ router.delete("/:id", verifyToken, requireCustomer, async (req, res) => {
     res.json({ message: "Xóa đánh giá thành công!" });
   } catch (error) {
     console.error("Delete review error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
+// 👨‍💼 ADMIN: Lấy tất cả đánh giá
+// Lưu ý: Route này phải đặt SAU các route cụ thể như /product/:productId và /my
+router.get("/", verifyToken, requireAdminOrStaff, async (req, res) => {
+  try {
+    console.log("📥 GET /api/reviews - Admin request");
+    const { page = 1, limit = 20, productId, rating } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    let query = {};
+    if (productId) query.product = productId;
+    if (rating) query.rating = parseInt(rating);
+
+    console.log("📥 Query:", query);
+
+    const reviews = await Review.find(query)
+      .populate("user", "fullName avatar email")
+      .populate("product", "name image")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await Review.countDocuments(query);
+
+    console.log(`📥 Found ${reviews.length} reviews, total: ${total}`);
+
+    // Đảm bảo tất cả reviews có trường isVisible (mặc định true cho đánh giá cũ)
+    const reviewsWithVisibility = reviews.map(review => {
+      const reviewObj = review.toObject();
+      if (reviewObj.isVisible === undefined) {
+        reviewObj.isVisible = true;
+      }
+      return reviewObj;
+    });
+
+    res.json({
+      reviews: reviewsWithVisibility,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / parseInt(limit)),
+    });
+  } catch (error) {
+    console.error("❌ Get all reviews error:", error);
+    res.status(500).json({ message: "Lỗi server!", error: error.message });
+  }
+});
+
+// 👨‍💼 ADMIN: Xóa đánh giá (admin có thể xóa bất kỳ đánh giá nào)
+router.delete("/admin/:id", verifyToken, requireAdminOrStaff, async (req, res) => {
+  try {
+    const review = await Review.findByIdAndDelete(req.params.id);
+
+    if (!review) {
+      return res.status(404).json({ message: "Không tìm thấy đánh giá!" });
+    }
+
+    // Cập nhật rating trung bình của sản phẩm (chỉ tính những đánh giá visible)
+    const reviews = await Review.find({ product: review.product, isVisible: true });
+    const avgRating = reviews.length > 0 
+      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+      : 0;
+    
+    await Product.findByIdAndUpdate(review.product, {
+      rating: avgRating,
+      totalReviews: reviews.length,
+    });
+
+    res.json({ message: "Xóa đánh giá thành công!" });
+  } catch (error) {
+    console.error("Admin delete review error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
+// 👨‍💼 ADMIN: Ẩn/Hiện đánh giá
+router.put("/admin/:id/toggle-visibility", verifyToken, requireAdminOrStaff, async (req, res) => {
+  try {
+    const review = await Review.findById(req.params.id);
+
+    if (!review) {
+      return res.status(404).json({ message: "Không tìm thấy đánh giá!" });
+    }
+
+    // Toggle visibility
+    review.isVisible = !review.isVisible;
+    await review.save();
+
+    // Cập nhật rating trung bình của sản phẩm (chỉ tính những đánh giá visible)
+    const reviews = await Review.find({ product: review.product, isVisible: true });
+    const avgRating = reviews.length > 0 
+      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
+      : 0;
+    
+    await Product.findByIdAndUpdate(review.product, {
+      rating: avgRating,
+      totalReviews: reviews.length,
+    });
+
+    await review.populate("user", "fullName avatar");
+    await review.populate("product", "name image");
+
+    res.json({
+      message: review.isVisible ? "Hiển thị đánh giá thành công!" : "Ẩn đánh giá thành công!",
+      review,
+    });
+  } catch (error) {
+    console.error("Toggle review visibility error:", error);
     res.status(500).json({ message: "Lỗi server!" });
   }
 });

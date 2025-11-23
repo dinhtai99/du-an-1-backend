@@ -88,6 +88,24 @@
             background: #c0392b;
         }
 
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
         .error-message {
             color: #e74c3c;
             margin-top: 10px;
@@ -689,6 +707,10 @@
                     <span class="menu-item-text">Hỗ trợ khách hàng</span>
                     <span id="chatUnreadBadge" class="unread-badge" style="display: none;">0</span>
                 </div>
+                <div class="menu-item" onclick="showReviews()">
+                    <span class="menu-item-icon">⭐</span>
+                    <span class="menu-item-text">Đánh giá</span>
+                </div>
                 <div class="menu-item" onclick="showAPIManagement()">
                     <span class="menu-item-icon">🔌</span>
                     <span class="menu-item-text">Quản lý API</span>
@@ -738,6 +760,11 @@
                     <div class="dashboard-card-icon">🎫</div>
                     <h3>Quản lý Voucher</h3>
                     <p>Quản lý voucher khách hàng</p>
+                </div>
+                <div class="dashboard-card" onclick="showReviews()">
+                    <div class="dashboard-card-icon">⭐</div>
+                    <h3>Đánh giá</h3>
+                    <p>Quản lý đánh giá sản phẩm</p>
                 </div>
                 <div class="dashboard-card" onclick="showAPIManagement()">
                     <div class="dashboard-card-icon">🔌</div>
@@ -887,6 +914,40 @@
             </div>
 
             <!-- API Management -->
+            <!-- Reviews Management -->
+            <div id="reviewsSection" class="hidden">
+                <div class="table-container">
+                    <div class="table-header">
+                        <h2>Quản lý Đánh giá</h2>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <select id="reviewProductFilter" onchange="loadReviews()" style="padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                <option value="">Tất cả sản phẩm</option>
+                            </select>
+                            <select id="reviewRatingFilter" onchange="loadReviews()" style="padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                <option value="">Tất cả đánh giá</option>
+                                <option value="5">5 sao</option>
+                                <option value="4">4 sao</option>
+                                <option value="3">3 sao</option>
+                                <option value="2">2 sao</option>
+                                <option value="1">1 sao</option>
+                            </select>
+                            <select id="reviewVisibilityFilter" onchange="loadReviews()" style="padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                                <option value="">Tất cả</option>
+                                <option value="true">Đang hiển thị</option>
+                                <option value="false">Đang ẩn</option>
+                            </select>
+                            <div class="search-box">
+                                <input type="text" id="reviewSearch" placeholder="Tìm kiếm..." onkeyup="loadReviews()">
+                            </div>
+                            <button class="btn btn-primary" onclick="loadReviews()">🔄 Làm mới</button>
+                        </div>
+                    </div>
+                    <div id="reviewsContent">
+                        <p style="text-align: center; padding: 40px; color: #999;">Đang tải...</p>
+                    </div>
+                </div>
+            </div>
+
             <div id="apiManagementSection" class="hidden">
                 <div class="table-container">
                     <div class="table-header">
@@ -1054,13 +1115,26 @@
                     <div class="form-group">
                         <label>Số lượng *</label>
                         <input type="number" id="voucherQuantity" required min="1">
+                        <small style="color: #64748b; font-size: 12px; display: block; margin-top: 5px;">
+                            💡 Tổng số voucher có thể sử dụng
+                        </small>
+                    </div>
+                    <div class="form-group">
+                        <label>Đã dùng</label>
+                        <input type="number" id="voucherUsedCount" min="0" value="0">
+                        <small style="color: #64748b; font-size: 12px; display: block; margin-top: 5px;">
+                            💡 Số lượng voucher đã được sử dụng. Có thể reset về 0 để khôi phục voucher đã hết hạn.
+                        </small>
                     </div>
                     <div class="form-group">
                         <label>Trạng thái</label>
                         <select id="voucherStatus">
                             <option value="1">Hoạt động</option>
-                            <option value="0">Ẩn</option>
+                            <option value="0">Dừng hoạt động</option>
                         </select>
+                        <small style="color: #64748b; font-size: 12px; display: block; margin-top: 5px;">
+                            💡 Chọn "Hoạt động" để voucher có thể sử dụng. Chọn "Dừng hoạt động" để tạm thời vô hiệu hóa voucher.
+                        </small>
                     </div>
                 </div>
                 <div class="form-row">
@@ -1082,12 +1156,58 @@
                     <input type="text" id="voucherCategories" placeholder="Nhập ID danh mục, cách nhau bởi dấu phẩy">
                 </div>
                 <div class="form-group">
-                    <label>Người dùng áp dụng (để trống = tất cả)</label>
-                    <input type="text" id="voucherUsers" placeholder="Nhập ID người dùng, cách nhau bởi dấu phẩy">
+                    <label>Người dùng áp dụng (để trống = tất cả user đều dùng được)</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="text" id="voucherUsers" placeholder="Nhập ID người dùng, cách nhau bởi dấu phẩy" style="flex: 1;">
+                        <button type="button" class="btn btn-success" onclick="showCustomerSelector()" style="white-space: nowrap;">
+                            📋 Chọn từ danh sách
+                        </button>
+                    </div>
+                    <small style="color: #64748b; font-size: 12px; display: block; margin-top: 5px;">
+                        💡 Để trống = tất cả khách hàng đều dùng được.<br>
+                        💡 Click "📋 Chọn từ danh sách" để mở modal chọn khách hàng bằng checkbox (dễ dàng hơn).
+                    </small>
                 </div>
                 <button type="submit" class="btn btn-primary">Lưu</button>
                 <div id="voucherError" class="error-message"></div>
             </form>
+        </div>
+    </div>
+
+    <!-- Customer Selector Modal for Voucher -->
+    <div id="customerSelectorModal" class="modal">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h2>Chọn khách hàng áp dụng voucher</h2>
+                <button class="close-btn" onclick="closeCustomerSelector()">&times;</button>
+            </div>
+            <div style="padding: 20px;">
+                <div style="margin-bottom: 20px;">
+                    <input type="text" id="customerSelectorSearch" placeholder="🔍 Tìm kiếm khách hàng..." 
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;"
+                           onkeyup="filterCustomerSelector()">
+                </div>
+                <div style="margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <label style="cursor: pointer;">
+                            <input type="checkbox" id="selectAllCustomers" onchange="toggleSelectAllCustomers()" style="margin-right: 8px;">
+                            <strong>Chọn tất cả</strong>
+                        </label>
+                    </div>
+                    <div>
+                        <span id="selectedCustomersCount" style="color: #667eea; font-weight: 600;">Đã chọn: 0</span>
+                    </div>
+                </div>
+                <div id="customerSelectorList" style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 5px; padding: 10px;">
+                    <div style="text-align: center; padding: 40px; color: #64748b;">
+                        Đang tải danh sách khách hàng...
+                    </div>
+                </div>
+                <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-danger" onclick="closeCustomerSelector()">Hủy</button>
+                    <button class="btn btn-primary" onclick="applySelectedCustomers()">Áp dụng</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1158,6 +1278,176 @@
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${currentToken || ''}`
             };
+        }
+
+        // Copy text to clipboard
+        function copyToClipboard(text, message = 'Đã copy!') {
+            navigator.clipboard.writeText(text).then(() => {
+                alert(message);
+            }).catch(err => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    alert(message);
+                } catch (err) {
+                    alert('Không thể copy! Vui lòng copy thủ công: ' + text);
+                }
+                document.body.removeChild(textArea);
+            });
+        }
+
+        // Customer selector for voucher
+        let allCustomersList = [];
+        let selectedCustomerIds = new Set();
+
+        async function showCustomerSelector() {
+            document.getElementById('customerSelectorModal').classList.add('active');
+            document.getElementById('customerSelectorSearch').value = '';
+            
+            // Load selected IDs from input field if any
+            const currentIds = document.getElementById('voucherUsers').value;
+            selectedCustomerIds.clear();
+            if (currentIds && currentIds.trim()) {
+                currentIds.split(',').forEach(id => {
+                    const trimmedId = id.trim();
+                    if (trimmedId) {
+                        selectedCustomerIds.add(trimmedId);
+                    }
+                });
+            }
+            
+            document.getElementById('selectAllCustomers').checked = false;
+            
+            // Load customers
+            try {
+                const response = await fetch(`${API_BASE}/users?role=customer&limit=1000`, {
+                    headers: getAuthHeaders()
+                });
+                const data = await response.json();
+                
+                if (response.ok && data.users) {
+                    allCustomersList = data.users;
+                    renderCustomerSelectorList(allCustomersList);
+                } else {
+                    document.getElementById('customerSelectorList').innerHTML = 
+                        '<div style="text-align: center; padding: 40px; color: #e74c3c;">Lỗi tải danh sách khách hàng!</div>';
+                }
+            } catch (error) {
+                console.error('Error loading customers:', error);
+                document.getElementById('customerSelectorList').innerHTML = 
+                    '<div style="text-align: center; padding: 40px; color: #e74c3c;">Lỗi kết nối server!</div>';
+            }
+        }
+
+        function renderCustomerSelectorList(customers) {
+            const listDiv = document.getElementById('customerSelectorList');
+            
+            if (customers.length === 0) {
+                listDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #64748b;">Không có khách hàng nào!</div>';
+                updateSelectedCount();
+                return;
+            }
+
+            let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+            customers.forEach(customer => {
+                const customerId = customer._id || customer.id || '';
+                const isSelected = selectedCustomerIds.has(customerId);
+                
+                html += `
+                    <label style="display: flex; align-items: center; padding: 12px; border: 1px solid #e2e8f0; border-radius: 5px; cursor: pointer; transition: background 0.2s; ${isSelected ? 'background: #f0f9ff; border-color: #667eea;' : ''}" 
+                           onmouseover="this.style.background='#f8f9fa'" 
+                           onmouseout="this.style.background='${isSelected ? '#f0f9ff' : 'white'}'">
+                        <input type="checkbox" 
+                               value="${customerId}" 
+                               ${isSelected ? 'checked' : ''}
+                               onchange="toggleCustomerSelection('${customerId}')"
+                               style="margin-right: 12px; width: 18px; height: 18px; cursor: pointer;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">${customer.fullName || 'N/A'}</div>
+                            <div style="font-size: 12px; color: #64748b;">
+                                ${customer.email || 'N/A'} | ${customer.phone || 'N/A'}
+                            </div>
+                            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">
+                                ID: <code style="background: #f1f3f5; padding: 2px 6px; border-radius: 3px;">${customerId}</code>
+                            </div>
+                        </div>
+                    </label>
+                `;
+            });
+            html += '</div>';
+            
+            listDiv.innerHTML = html;
+            updateSelectedCount();
+        }
+
+        function toggleCustomerSelection(customerId) {
+            if (selectedCustomerIds.has(customerId)) {
+                selectedCustomerIds.delete(customerId);
+            } else {
+                selectedCustomerIds.add(customerId);
+            }
+            updateSelectedCount();
+        }
+
+        function toggleSelectAllCustomers() {
+            const selectAll = document.getElementById('selectAllCustomers').checked;
+            const checkboxes = document.querySelectorAll('#customerSelectorList input[type="checkbox"]');
+            
+            checkboxes.forEach(checkbox => {
+                const customerId = checkbox.value;
+                checkbox.checked = selectAll;
+                if (selectAll) {
+                    selectedCustomerIds.add(customerId);
+                } else {
+                    selectedCustomerIds.delete(customerId);
+                }
+            });
+            
+            updateSelectedCount();
+        }
+
+        function filterCustomerSelector() {
+            const search = document.getElementById('customerSelectorSearch').value.toLowerCase();
+            const filtered = allCustomersList.filter(customer => {
+                const name = (customer.fullName || '').toLowerCase();
+                const email = (customer.email || '').toLowerCase();
+                const phone = (customer.phone || '').toLowerCase();
+                const id = (customer._id || customer.id || '').toLowerCase();
+                return name.includes(search) || email.includes(search) || phone.includes(search) || id.includes(search);
+            });
+            renderCustomerSelectorList(filtered);
+        }
+
+        function updateSelectedCount() {
+            const count = selectedCustomerIds.size;
+            document.getElementById('selectedCustomersCount').textContent = `Đã chọn: ${count}`;
+        }
+
+        function applySelectedCustomers() {
+            if (selectedCustomerIds.size === 0) {
+                if (confirm('Bạn chưa chọn khách hàng nào. Bạn có muốn để trống (áp dụng cho tất cả) không?')) {
+                    document.getElementById('voucherUsers').value = '';
+                    closeCustomerSelector();
+                }
+                return;
+            }
+            
+            const idsArray = Array.from(selectedCustomerIds);
+            const idsString = idsArray.join(', ');
+            document.getElementById('voucherUsers').value = idsString;
+            console.log('✅ Applied selected customers:', idsArray);
+            console.log('✅ Input value set to:', idsString);
+            closeCustomerSelector();
+        }
+
+        function closeCustomerSelector() {
+            document.getElementById('customerSelectorModal').classList.remove('active');
         }
 
         // Navigation
@@ -1236,10 +1526,17 @@
             startChatAutoRefresh();
         }
         
+        function showReviews() {
+            showSection('reviewsSection');
+            updatePageTitle('Quản lý Đánh giá');
+            updateActiveMenu(event?.target?.closest('.menu-item') || document.querySelectorAll('.menu-item')[8]);
+            loadReviews();
+        }
+
         function showAPIManagement() {
             showSection('apiManagementSection');
             updatePageTitle('Quản lý API');
-            updateActiveMenu(event?.target?.closest('.menu-item') || document.querySelectorAll('.menu-item')[8]);
+            updateActiveMenu(event?.target?.closest('.menu-item') || document.querySelectorAll('.menu-item')[9]);
             loadAPIs();
         }
         
@@ -1639,9 +1936,100 @@
             return statusMap[status] || status;
         }
 
+        function getPaymentStatusText(paymentStatus) {
+            const paymentStatusMap = {
+                'pending': 'Chờ thanh toán',
+                'processing': 'Đang xử lý thanh toán',
+                'success': 'Thanh toán thành công',
+                'failed': 'Thanh toán thất bại',
+                'cancelled': 'Đã hủy thanh toán'
+            };
+            return paymentStatusMap[paymentStatus] || paymentStatus;
+        }
+
+        function getPaymentStatusColor(paymentStatus) {
+            const colorMap = {
+                'pending': 'warning',
+                'processing': 'info',
+                'success': 'success',
+                'failed': 'danger',
+                'cancelled': 'secondary'
+            };
+            return colorMap[paymentStatus] || 'secondary';
+        }
+
         async function updateOrderStatus(orderId) {
-            const status = prompt('Nhập trạng thái mới (new/processing/shipping/completed/cancelled):');
-            if (!status) return;
+            // Lấy thông tin đơn hàng hiện tại để biết trạng thái hiện tại
+            let currentStatus = 'new';
+            try {
+                const orderResponse = await fetch(`${API_BASE}/orders/${orderId}`, {
+                    headers: getAuthHeaders()
+                });
+                if (orderResponse.ok) {
+                    const order = await orderResponse.json();
+                    currentStatus = order.status || 'new';
+                }
+            } catch (e) {
+                console.error('Error loading order:', e);
+            }
+
+            // Tạo modal với dropdown
+            const modal = document.createElement('div');
+            modal.className = 'modal active';
+            modal.id = 'updateStatusModal';
+            modal.innerHTML = `
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2>Cập nhật trạng thái đơn hàng</h2>
+                        <button class="close-btn" onclick="closeUpdateStatusModal()">&times;</button>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #333;">
+                            Chọn trạng thái mới:
+                        </label>
+                        <select id="newOrderStatus" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; font-size: 14px;">
+                            <option value="new" ${currentStatus === 'new' ? 'selected' : ''}>Mới</option>
+                            <option value="processing" ${currentStatus === 'processing' ? 'selected' : ''}>Đang xử lý</option>
+                            <option value="shipping" ${currentStatus === 'shipping' ? 'selected' : ''}>Đang giao</option>
+                            <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>Hoàn thành</option>
+                            <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>Đã hủy</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                        <button class="btn btn-secondary" onclick="closeUpdateStatusModal()">Hủy</button>
+                        <button class="btn btn-primary" onclick="confirmUpdateOrderStatus('${orderId}')">Cập nhật</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // Đóng modal khi click bên ngoài
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeUpdateStatusModal();
+                }
+            });
+        }
+
+        function closeUpdateStatusModal() {
+            const modal = document.getElementById('updateStatusModal');
+            if (modal) {
+                modal.remove();
+            }
+        }
+
+        async function confirmUpdateOrderStatus(orderId) {
+            const statusSelect = document.getElementById('newOrderStatus');
+            if (!statusSelect) {
+                alert('Lỗi: Không tìm thấy dropdown trạng thái!');
+                return;
+            }
+
+            const status = statusSelect.value;
+            if (!status) {
+                alert('Vui lòng chọn trạng thái!');
+                return;
+            }
 
             try {
                 const response = await fetch(`${API_BASE}/orders/${orderId}/status`, {
@@ -1652,6 +2040,7 @@
 
                 if (response.ok) {
                     alert('Cập nhật thành công!');
+                    closeUpdateStatusModal();
                     loadOrders(currentPage.orders);
                 } else {
                     const data = await response.json();
@@ -1978,6 +2367,7 @@
                 <table>
                     <thead>
                         <tr>
+                            <th>ID</th>
                             <th>Tên</th>
                             <th>Email</th>
                             <th>Số điện thoại</th>
@@ -1992,16 +2382,24 @@
                             const statusClass = isBanned ? 'status-cancelled' : 'status-completed';
                             const statusText = isBanned ? 'Đã khóa' : 'Hoạt động';
                             
+                            const customerId = customer._id || customer.id || '';
                             return `
                             <tr>
+                                <td>
+                                    <code style="background: #f1f3f5; padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;" 
+                                          onclick="copyToClipboard('${customerId}', 'ID đã được copy!')" 
+                                          title="Click để copy ID">
+                                        ${customerId.substring(0, 12)}...
+                                    </code>
+                                </td>
                                 <td>${customer.fullName || 'N/A'}</td>
                                 <td>${customer.email || 'N/A'}</td>
                                 <td>${customer.phone || 'N/A'}</td>
                                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                                 <td>${new Date(customer.createdAt).toLocaleDateString('vi-VN')}</td>
                                 <td>
-                                    <button class="btn-sm btn-view" onclick="viewCustomer('${customer._id}')">Xem</button>
-                                    <button class="btn-sm ${isBanned ? 'btn-edit' : 'btn-delete'}" onclick="toggleBanCustomer('${customer._id}', ${isBanned})">
+                                    <button class="btn-sm btn-view" onclick="viewCustomer('${customerId}')">Xem</button>
+                                    <button class="btn-sm ${isBanned ? 'btn-edit' : 'btn-delete'}" onclick="toggleBanCustomer('${customerId}', ${isBanned})">
                                         ${isBanned ? 'Mở khóa' : 'Khóa'}
                                     </button>
                                 </td>
@@ -2852,25 +3250,143 @@
                 const order = await response.json();
 
                 if (response.ok) {
-                    const items = order.items?.map(item => 
-                        `- ${item.product?.name || 'N/A'} x${item.quantity} = ${item.subtotal?.toLocaleString('vi-VN')} VNĐ`
-                    ).join('\n') || 'Không có sản phẩm';
+                    // Tạo địa chỉ giao hàng đầy đủ
+                    const shippingAddr = order.shippingAddress || {};
+                    const fullAddress = [
+                        shippingAddr.address || '',
+                        shippingAddr.ward ? `Phường/Xã: ${shippingAddr.ward}` : '',
+                        shippingAddr.district ? `Quận/Huyện: ${shippingAddr.district}` : '',
+                        shippingAddr.city ? `Tỉnh/TP: ${shippingAddr.city}` : ''
+                    ].filter(Boolean).join(', ');
 
-                    alert(`Chi tiết đơn hàng:\n\n` +
-                        `Mã đơn: ${order.orderNumber || id}\n` +
-                        `Khách hàng: ${order.customer?.fullName || 'N/A'}\n` +
-                        `Email: ${order.customer?.email || 'N/A'}\n` +
-                        `SĐT: ${order.customer?.phone || 'N/A'}\n` +
-                        `Trạng thái: ${getStatusText(order.status)}\n` +
-                        `Tổng tiền: ${order.total?.toLocaleString('vi-VN')} VNĐ\n` +
-                        `Phương thức thanh toán: ${order.paymentMethod || 'N/A'}\n` +
-                        `Ngày tạo: ${new Date(order.createdAt).toLocaleString('vi-VN')}\n\n` +
-                        `Sản phẩm:\n${items}`);
+                    // Tạo modal hiển thị chi tiết
+                    const modal = document.createElement('div');
+                    modal.className = 'modal active';
+                    modal.id = 'orderDetailModal';
+                    modal.innerHTML = `
+                        <div class="modal-content" style="max-width: 800px;">
+                            <div class="modal-header">
+                                <h2>Chi tiết đơn hàng: ${order.orderNumber || id}</h2>
+                                <button class="close-btn" onclick="closeOrderDetailModal()">&times;</button>
+                            </div>
+                            <div style="max-height: 80vh; overflow-y: auto;">
+                                <!-- Thông tin khách hàng -->
+                                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #667eea;">👤 Thông tin khách hàng</h3>
+                                    <p style="margin: 5px 0;"><strong>Tên:</strong> ${order.customer?.fullName || 'N/A'}</p>
+                                    <p style="margin: 5px 0;"><strong>Email:</strong> ${order.customer?.email || 'N/A'}</p>
+                                    <p style="margin: 5px 0;"><strong>SĐT:</strong> ${order.customer?.phone || 'N/A'}</p>
+                                </div>
+
+                                <!-- Địa chỉ giao hàng -->
+                                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #667eea;">📍 Địa chỉ giao hàng</h3>
+                                    <p style="margin: 5px 0;"><strong>Người nhận:</strong> ${shippingAddr.fullName || 'N/A'}</p>
+                                    <p style="margin: 5px 0;"><strong>SĐT:</strong> ${shippingAddr.phone || 'N/A'}</p>
+                                    <p style="margin: 5px 0;"><strong>Địa chỉ:</strong> ${fullAddress || 'N/A'}</p>
+                                </div>
+
+                                <!-- Thông tin đơn hàng -->
+                                <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #667eea;">📋 Thông tin đơn hàng</h3>
+                                    <p style="margin: 5px 0;"><strong>Trạng thái:</strong> <span class="status-badge status-${order.status}">${getStatusText(order.status)}</span></p>
+                                    <p style="margin: 5px 0;"><strong>Phương thức thanh toán:</strong> ${order.paymentMethod || 'N/A'}</p>
+                                    <p style="margin: 5px 0;"><strong>Trạng thái thanh toán:</strong> <span class="status-badge status-${getPaymentStatusColor(order.paymentStatus || 'pending')}">${getPaymentStatusText(order.paymentStatus || 'pending')}</span></p>
+                                    <p style="margin: 5px 0;"><strong>Ngày tạo:</strong> ${new Date(order.createdAt).toLocaleString('vi-VN')}</p>
+                                    ${order.completedAt ? `<p style="margin: 5px 0;"><strong>Ngày hoàn thành:</strong> ${new Date(order.completedAt).toLocaleString('vi-VN')}</p>` : ''}
+                                </div>
+
+                                <!-- Sản phẩm -->
+                                <div style="margin-bottom: 20px;">
+                                    <h3 style="margin: 0 0 15px 0; color: #667eea;">🛍️ Sản phẩm</h3>
+                                    <table style="width: 100%; border-collapse: collapse;">
+                                        <thead>
+                                            <tr style="background: #667eea; color: white;">
+                                                <th style="padding: 10px; text-align: left;">Sản phẩm</th>
+                                                <th style="padding: 10px; text-align: center;">Số lượng</th>
+                                                <th style="padding: 10px; text-align: right;">Giá</th>
+                                                <th style="padding: 10px; text-align: right;">Thành tiền</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${order.items?.map(item => `
+                                                <tr style="border-bottom: 1px solid #dee2e6;">
+                                                    <td style="padding: 10px;">${item.product?.name || 'N/A'}</td>
+                                                    <td style="padding: 10px; text-align: center;">${item.quantity || 0}</td>
+                                                    <td style="padding: 10px; text-align: right;">${(item.price || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                    <td style="padding: 10px; text-align: right; font-weight: 600;">${(item.subtotal || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                </tr>
+                                            `).join('') || '<tr><td colspan="4" style="padding: 20px; text-align: center;">Không có sản phẩm</td></tr>'}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr style="background: #f8f9fa;">
+                                                <td colspan="3" style="padding: 10px; text-align: right;">Tổng tiền sản phẩm:</td>
+                                                <td style="padding: 10px; text-align: right; font-weight: 600;">
+                                                    ${(order.subtotal || 0).toLocaleString('vi-VN')} VNĐ
+                                                </td>
+                                            </tr>
+                                            <tr style="background: #f8f9fa;">
+                                                <td colspan="3" style="padding: 10px; text-align: right;">Phí vận chuyển:</td>
+                                                <td style="padding: 10px; text-align: right; font-weight: 600;">
+                                                    ${(order.shippingFee || 0).toLocaleString('vi-VN')} VNĐ
+                                                </td>
+                                            </tr>
+                                            ${order.voucherCode ? `
+                                            <tr style="background: #e8f5e9;">
+                                                <td colspan="3" style="padding: 10px; text-align: right; color: #2e7d32;">
+                                                    <strong>🎫 Mã voucher:</strong> ${order.voucherCode}
+                                                    ${order.voucherDiscount ? `<br><small>Giảm giá: -${(order.voucherDiscount || 0).toLocaleString('vi-VN')} VNĐ</small>` : ''}
+                                                </td>
+                                                <td style="padding: 10px; text-align: right; font-weight: 600; color: #2e7d32;">
+                                                    ${order.voucherDiscount ? `-${(order.voucherDiscount || 0).toLocaleString('vi-VN')} VNĐ` : '0 VNĐ'}
+                                                </td>
+                                            </tr>
+                                            ` : ''}
+                                            <tr style="background: #667eea; color: white;">
+                                                <td colspan="3" style="padding: 15px; text-align: right; font-weight: 700; font-size: 16px;">Tổng tiền:</td>
+                                                <td style="padding: 15px; text-align: right; font-weight: 700; font-size: 18px;">
+                                                    ${(order.total || 0).toLocaleString('vi-VN')} VNĐ
+                                                </td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+
+                                ${order.notes ? `
+                                <div style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107;">
+                                    <h3 style="margin: 0 0 10px 0; color: #856404;">📝 Ghi chú</h3>
+                                    <p style="margin: 0; color: #856404;">${order.notes}</p>
+                                </div>
+                                ` : ''}
+                            </div>
+                            <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+                                <button class="btn btn-secondary" onclick="closeOrderDetailModal()">Đóng</button>
+                                ${order.status !== 'completed' && order.status !== 'cancelled' ? 
+                                    `<button class="btn btn-primary" onclick="closeOrderDetailModal(); updateOrderStatus('${id}')">Cập nhật trạng thái</button>` : ''}
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modal);
+
+                    // Đóng modal khi click bên ngoài
+                    modal.addEventListener('click', (e) => {
+                        if (e.target === modal) {
+                            closeOrderDetailModal();
+                        }
+                    });
                 } else {
                     alert('Không tìm thấy đơn hàng!');
                 }
             } catch (error) {
+                console.error('View order error:', error);
                 alert('Lỗi tải dữ liệu đơn hàng!');
+            }
+        }
+
+        function closeOrderDetailModal() {
+            const modal = document.getElementById('orderDetailModal');
+            if (modal) {
+                modal.remove();
             }
         }
 
@@ -2916,13 +3432,20 @@
 
                     const totalSpent = orders.reduce((sum, order) => sum + (order.total || 0), 0);
 
-                    alert(`Chi tiết khách hàng:\n\n` +
+                    const customerId = customer._id || customer.id || id;
+                    const detailText = `Chi tiết khách hàng:\n\n` +
+                        `ID: ${customerId}\n` +
                         `Tên: ${customer.fullName || 'N/A'}\n` +
                         `Email: ${customer.email || 'N/A'}\n` +
                         `SĐT: ${customer.phone || 'N/A'}\n` +
                         `Ngày tạo: ${new Date(customer.createdAt).toLocaleDateString('vi-VN')}\n` +
                         `Tổng đơn hàng: ${orders.length}\n` +
-                        `Tổng tiền đã mua: ${totalSpent.toLocaleString('vi-VN')} VNĐ`);
+                        `Tổng tiền đã mua: ${totalSpent.toLocaleString('vi-VN')} VNĐ\n\n` +
+                        `💡 Click nút bên dưới để copy ID vào clipboard!`;
+                    
+                    if (confirm(detailText + '\n\nBạn có muốn copy ID này không?')) {
+                        copyToClipboard(customerId, '✅ ID khách hàng đã được copy! Bạn có thể paste vào form voucher.');
+                    }
                 } else {
                     alert('Không tìm thấy khách hàng!');
                 }
@@ -3003,6 +3526,7 @@
                             <th>Giá trị</th>
                             <th>Số lượng</th>
                             <th>Đã dùng</th>
+                            <th>Người dùng áp dụng</th>
                             <th>Ngày bắt đầu</th>
                             <th>Ngày kết thúc</th>
                             <th>Trạng thái</th>
@@ -3022,6 +3546,22 @@
                             const endDate = voucher.endDate ? new Date(voucher.endDate) : new Date();
                             const status = voucher.status; // Có thể là 0/1 hoặc "active"/"inactive"/"expired"
                             const id = voucher._id || voucher.id || '';
+                            
+                            // Xác định người dùng áp dụng
+                            const applicableUsers = voucher.applicableUsers || [];
+                            console.log(`🔍 Rendering voucher ${voucher.code || voucher._id} - applicableUsers:`, applicableUsers);
+                            console.log(`🔍 Rendering voucher ${voucher.code || voucher._id} - applicableUsers length:`, applicableUsers.length);
+                            console.log(`🔍 Rendering voucher ${voucher.code || voucher._id} - applicableUsers type:`, typeof applicableUsers, Array.isArray(applicableUsers));
+                            
+                            let usersText = 'Tất cả';
+                            if (applicableUsers.length > 0) {
+                                if (applicableUsers.length === 1) {
+                                    const userId = typeof applicableUsers[0] === 'object' ? applicableUsers[0]._id || applicableUsers[0].id : applicableUsers[0];
+                                    usersText = `1 user (${String(userId).substring(0, 8)}...)`;
+                                } else {
+                                    usersText = `${applicableUsers.length} users`;
+                                }
+                            }
                             
                             // Xác định trạng thái hiển thị
                             let statusClass = 'status-cancelled';
@@ -3061,7 +3601,7 @@
                                 } else if (status === 1) {
                                     // Kiểm tra các điều kiện
                                     if (usedCount >= quantity) {
-                                        statusClass = 'status-cancelled';
+                                    statusClass = 'status-cancelled';
                                         statusText = 'Hết hạn (đã dùng hết)';
                                     } else if (endDate < now) {
                                         statusClass = 'status-cancelled';
@@ -3072,8 +3612,8 @@
                                     } else {
                                         statusClass = 'status-completed';
                                         statusText = 'Hoạt động';
-                                    }
-                                } else {
+                                }
+                            } else {
                                     statusClass = 'status-cancelled';
                                     statusText = 'Không hợp lệ';
                                 }
@@ -3087,6 +3627,7 @@
                                 <td>${type === 'percentage' ? value + '%' : value.toLocaleString('vi-VN') + ' VNĐ'}</td>
                                 <td>${quantity}</td>
                                 <td>${usedCount}</td>
+                                <td><span title="${applicableUsers.length > 0 ? 'Chỉ áp dụng cho ' + applicableUsers.length + ' user(s)' : 'Áp dụng cho tất cả user'}" style="cursor: help;">${usersText}</span></td>
                                 <td>${startDate.toLocaleDateString('vi-VN')}</td>
                                 <td>${endDate.toLocaleDateString('vi-VN')}</td>
                                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
@@ -3141,6 +3682,7 @@
                 document.getElementById('voucherMaxDiscount').value = voucher.maxDiscount || '';
                 document.getElementById('voucherMinOrderValue').value = voucher.minOrderValue || voucher.minOrderAmount || 0;
                 document.getElementById('voucherQuantity').value = voucher.quantity || '';
+                document.getElementById('voucherUsedCount').value = voucher.usedCount || voucher.used || 0;
                 
                 // Xử lý status (có thể là 0/1 hoặc "active"/"inactive")
                 let statusValue = 1;
@@ -3188,6 +3730,51 @@
                 return str.split(',').map(s => s.trim()).filter(s => s);
             };
 
+            const quantity = parseInt(document.getElementById('voucherQuantity').value);
+            const usedCount = parseInt(document.getElementById('voucherUsedCount').value) || 0;
+            
+            // Validation: usedCount không được lớn hơn quantity
+            if (usedCount > quantity) {
+                if (errorElement) {
+                    errorElement.textContent = `Số đã dùng (${usedCount}) không thể lớn hơn số lượng (${quantity})!`;
+                    errorElement.style.display = 'block';
+                } else {
+                    alert(`Lỗi: Số đã dùng (${usedCount}) không thể lớn hơn số lượng (${quantity})!`);
+                }
+                return;
+            }
+            
+            if (usedCount < 0) {
+                if (errorElement) {
+                    errorElement.textContent = 'Số đã dùng không thể nhỏ hơn 0!';
+                    errorElement.style.display = 'block';
+                } else {
+                    alert('Lỗi: Số đã dùng không thể nhỏ hơn 0!');
+                }
+                return;
+            }
+
+            // Lấy và parse applicableUsers
+            const voucherUsersInput = document.getElementById('voucherUsers').value;
+            const applicableUsers = parseIds(voucherUsersInput);
+            
+            // Debug logging
+            console.log('🔍 Voucher Users Input:', voucherUsersInput);
+            console.log('🔍 Parsed Applicable Users:', applicableUsers);
+            console.log('🔍 Applicable Users Length:', applicableUsers.length);
+            
+            // Cảnh báo nếu có chọn user nhưng parse ra mảng rỗng
+            if (voucherUsersInput && voucherUsersInput.trim() && applicableUsers.length === 0) {
+                alert('⚠️ Cảnh báo: Bạn đã nhập ID người dùng nhưng không hợp lệ. Voucher sẽ áp dụng cho TẤT CẢ user!\n\nVui lòng kiểm tra lại ID hoặc sử dụng nút "Chọn từ danh sách" để chọn khách hàng.');
+            }
+            
+            // Thông báo số lượng user được chọn
+            if (applicableUsers.length > 0) {
+                console.log(`✅ Voucher sẽ chỉ áp dụng cho ${applicableUsers.length} user(s):`, applicableUsers);
+            } else {
+                console.log('ℹ️ Voucher sẽ áp dụng cho TẤT CẢ user (applicableUsers rỗng)');
+            }
+
             const data = {
                 code: document.getElementById('voucherCode').value.toUpperCase(),
                 name: document.getElementById('voucherName').value,
@@ -3195,13 +3782,14 @@
                 type: document.getElementById('voucherType').value,
                 value: parseFloat(document.getElementById('voucherValue').value),
                 minOrderValue: parseFloat(document.getElementById('voucherMinOrderValue').value) || 0,
-                quantity: parseInt(document.getElementById('voucherQuantity').value),
+                quantity: quantity,
+                usedCount: usedCount,
                 startDate: document.getElementById('voucherStartDate').value,
                 endDate: document.getElementById('voucherEndDate').value,
                 status: parseInt(document.getElementById('voucherStatus').value),
                 applicableProducts: parseIds(document.getElementById('voucherProducts').value),
                 applicableCategories: parseIds(document.getElementById('voucherCategories').value),
-                applicableUsers: parseIds(document.getElementById('voucherUsers').value)
+                applicableUsers: applicableUsers // Sử dụng biến đã parse
             };
 
             if (data.type === 'percentage' && document.getElementById('voucherMaxDiscount').value) {
@@ -3209,7 +3797,10 @@
             }
 
             console.log('💾 Saving voucher:', { id, data });
-
+            console.log('💾 ApplicableUsers trong data:', data.applicableUsers);
+            console.log('💾 ApplicableUsers type:', typeof data.applicableUsers, Array.isArray(data.applicableUsers));
+            console.log('💾 ApplicableUsers length:', data.applicableUsers?.length);
+            
             try {
                 // Kiểm tra token trước khi gửi request
                 if (!currentToken) {
@@ -3222,6 +3813,7 @@
                 const method = id ? 'PUT' : 'POST';
                 
                 console.log('📤 Sending request:', { url, method });
+                console.log('📤 Request body applicableUsers:', JSON.stringify(data.applicableUsers));
                 
                 const response = await fetch(url, {
                     method,
@@ -3235,6 +3827,8 @@
                 try {
                     result = await response.json();
                     console.log('📦 Response data:', result);
+                    console.log('📦 Response applicableUsers:', result.data?.applicableUsers);
+                    console.log('📦 Response applicableUsers length:', result.data?.applicableUsers?.length);
                 } catch (jsonError) {
                     console.error('❌ JSON parse error:', jsonError);
                     const text = await response.text();
@@ -3250,7 +3844,26 @@
 
                 if (response.ok) {
                     // Hỗ trợ cả format mới và cũ
-                    const message = result.message || result.success?.message || (result.success ? 'Lưu thành công!' : 'Có lỗi xảy ra!');
+                    let message = result.message || result.success?.message || (result.success ? 'Lưu thành công!' : 'Có lỗi xảy ra!');
+                    
+                    // Thêm thông báo chi tiết nếu đang khôi phục voucher
+                    const status = parseInt(document.getElementById('voucherStatus').value);
+                    const oldUsedCount = result.data?.used || 0;
+                    const newUsedCount = parseInt(document.getElementById('voucherUsedCount').value) || 0;
+                    const quantity = parseInt(document.getElementById('voucherQuantity').value);
+                    
+                    if (status === 1 && id) {
+                        // Đang sửa voucher và chuyển về "Hoạt động"
+                        if (newUsedCount < oldUsedCount) {
+                            message += '\n\n✅ Voucher đã được khôi phục! Số đã dùng đã được reset.';
+                        } else if (quantity > newUsedCount) {
+                            message += '\n\n✅ Voucher đã được kích hoạt lại và có thể sử dụng ngay!';
+                        }
+                    } else if (status === 0 && id) {
+                        // Đang tắt voucher
+                        message += '\n\n⚠️ Voucher đã bị dừng hoạt động. Khách hàng không thể sử dụng.';
+                    }
+                    
                     alert(message);
                     closeModal('voucherModal');
                     loadVouchers(currentPage.vouchers || 1);
@@ -3314,6 +3927,12 @@
                 
                 // Hỗ trợ cả format mới và cũ
                 const voucher = result.data || result;
+                
+                console.log('👁️ ViewVoucher - Full response:', result);
+                console.log('👁️ ViewVoucher - Voucher data:', voucher);
+                console.log('👁️ ViewVoucher - applicableUsers:', voucher.applicableUsers);
+                console.log('👁️ ViewVoucher - applicableUsers type:', typeof voucher.applicableUsers, Array.isArray(voucher.applicableUsers));
+                console.log('👁️ ViewVoucher - applicableUsers length:', voucher.applicableUsers?.length);
 
                 if (response.ok && voucher) {
                     const type = voucher.type || voucher.discountType || 'percentage';
@@ -3337,6 +3956,23 @@
                         statusText = isValid ? 'Hợp lệ' : 'Không hợp lệ';
                     }
 
+                    // Xác định người dùng áp dụng
+                    const applicableUsers = voucher.applicableUsers || [];
+                    console.log('👁️ ViewVoucher - Processing applicableUsers:', applicableUsers);
+                    console.log('👁️ ViewVoucher - applicableUsers length after || []:', applicableUsers.length);
+                    
+                    let usersInfo = 'Tất cả user';
+                    if (applicableUsers.length > 0) {
+                        const userIds = applicableUsers.map(u => {
+                            if (typeof u === 'object') return u._id || u.id || u;
+                            return u;
+                        });
+                        usersInfo = `${applicableUsers.length} user(s): ${userIds.join(', ')}`;
+                        console.log('👁️ ViewVoucher - usersInfo:', usersInfo);
+                    } else {
+                        console.log('👁️ ViewVoucher - applicableUsers is empty, showing "Tất cả user"');
+                    }
+
                     alert(`Chi tiết voucher:\n\n` +
                         `Mã: ${voucher.code || 'N/A'}\n` +
                         `Tên: ${voucher.name || 'N/A'}\n` +
@@ -3348,6 +3984,7 @@
                         `Số lượng: ${quantity}\n` +
                         `Đã dùng: ${usedCount}\n` +
                         `Còn lại: ${quantity - usedCount}\n` +
+                        `Người dùng áp dụng: ${usersInfo}\n` +
                         `Ngày bắt đầu: ${startDate.toLocaleString('vi-VN')}\n` +
                         `Ngày kết thúc: ${endDate.toLocaleString('vi-VN')}\n` +
                         `Trạng thái: ${statusText}\n` +
@@ -3422,11 +4059,14 @@
             { method: 'DELETE', path: '/api/addresses/:id', description: 'Xóa địa chỉ', auth: true },
             
             // Reviews
+            { method: 'GET', path: '/api/reviews', description: 'Lấy tất cả đánh giá (Admin)', auth: true, admin: true },
             { method: 'GET', path: '/api/reviews/product/:productId', description: 'Lấy đánh giá của sản phẩm', auth: false },
             { method: 'GET', path: '/api/reviews/my', description: 'Lấy đánh giá của tôi', auth: true },
             { method: 'POST', path: '/api/reviews', description: 'Thêm đánh giá', auth: true },
             { method: 'PUT', path: '/api/reviews/:id', description: 'Cập nhật đánh giá', auth: true },
-            { method: 'DELETE', path: '/api/reviews/:id', description: 'Xóa đánh giá', auth: true },
+            { method: 'DELETE', path: '/api/reviews/:id', description: 'Xóa đánh giá (Customer)', auth: true },
+            { method: 'DELETE', path: '/api/reviews/admin/:id', description: 'Xóa đánh giá (Admin)', auth: true, admin: true },
+            { method: 'PUT', path: '/api/reviews/admin/:id/toggle-visibility', description: 'Ẩn/Hiện đánh giá (Admin)', auth: true, admin: true },
             
             // Favorites
             { method: 'GET', path: '/api/favorites', description: 'Lấy danh sách yêu thích', auth: true },
@@ -3498,6 +4138,219 @@
             { method: 'GET', path: '/api/invoices/:id', description: 'Lấy chi tiết hóa đơn', auth: true },
             { method: 'PATCH', path: '/api/invoices/:id/status', description: 'Cập nhật trạng thái hóa đơn', auth: true },
         ];
+
+        // Reviews Management Functions
+        async function loadReviews() {
+            try {
+                const productFilter = document.getElementById('reviewProductFilter')?.value || '';
+                const ratingFilter = document.getElementById('reviewRatingFilter')?.value || '';
+                const visibilityFilter = document.getElementById('reviewVisibilityFilter')?.value || '';
+                const search = document.getElementById('reviewSearch')?.value || '';
+                
+                let url = `${API_BASE}/reviews?limit=50`;
+                if (productFilter) url += `&productId=${productFilter}`;
+                if (ratingFilter) url += `&rating=${ratingFilter}`;
+                
+                const response = await fetch(url, {
+                    headers: getAuthHeaders()
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || 'Lỗi tải đánh giá!');
+                }
+                
+                const data = await response.json();
+                
+                if (!data || !data.reviews) {
+                    throw new Error('Dữ liệu không hợp lệ!');
+                }
+                
+                // Load danh sách sản phẩm cho filter
+                if (!productFilter) {
+                    const productsResponse = await fetch(`${API_BASE}/products?limit=100`, {
+                        headers: getAuthHeaders()
+                    });
+                    if (productsResponse.ok) {
+                        const productsData = await productsResponse.json();
+                        const productSelect = document.getElementById('reviewProductFilter');
+                        if (productSelect) {
+                            const currentValue = productSelect.value;
+                            productSelect.innerHTML = '<option value="">Tất cả sản phẩm</option>';
+                            if (productsData.products) {
+                                productsData.products.forEach(product => {
+                                    const option = document.createElement('option');
+                                    option.value = product._id;
+                                    option.textContent = product.name;
+                                    if (product._id === currentValue) option.selected = true;
+                                    productSelect.appendChild(option);
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                // Filter by search and visibility
+                let filteredReviews = data.reviews || [];
+                
+                // Filter by visibility
+                if (visibilityFilter !== '') {
+                    const isVisible = visibilityFilter === 'true';
+                    filteredReviews = filteredReviews.filter(review => {
+                        // Mặc định isVisible = true nếu không có trường này (cho đánh giá cũ)
+                        const reviewVisible = review.isVisible !== undefined ? review.isVisible : true;
+                        return reviewVisible === isVisible;
+                    });
+                }
+                
+                // Filter by search
+                if (search) {
+                    const searchLower = search.toLowerCase();
+                    filteredReviews = filteredReviews.filter(review => {
+                        const userName = review.user?.fullName?.toLowerCase() || '';
+                        const productName = review.product?.name?.toLowerCase() || '';
+                        const comment = review.comment?.toLowerCase() || '';
+                        return userName.includes(searchLower) || 
+                               productName.includes(searchLower) || 
+                               comment.includes(searchLower);
+                    });
+                }
+                
+                let html = `
+                    <div style="margin-bottom: 15px; color: #666;">
+                        Tổng số đánh giá: <strong>${filteredReviews.length}</strong>
+                    </div>
+                `;
+                
+                if (filteredReviews.length > 0) {
+                    html += '<table><thead><tr>';
+                    html += '<th>Khách hàng</th>';
+                    html += '<th>Sản phẩm</th>';
+                    html += '<th>Đánh giá</th>';
+                    html += '<th>Bình luận</th>';
+                    html += '<th>Trạng thái</th>';
+                    html += '<th>Ngày đánh giá</th>';
+                    html += '<th>Thao tác</th>';
+                    html += '</tr></thead><tbody>';
+                    
+                    filteredReviews.forEach(review => {
+                        const stars = '⭐'.repeat(review.rating || 0);
+                        const date = new Date(review.createdAt).toLocaleString('vi-VN');
+                        // Mặc định isVisible = true nếu không có trường này (cho đánh giá cũ)
+                        const isVisible = review.isVisible !== undefined ? review.isVisible : true;
+                        const statusBadge = isVisible 
+                            ? '<span style="background: #10b981; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">Hiển thị</span>'
+                            : '<span style="background: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;">Đang ẩn</span>';
+                        const rowStyle = !isVisible ? 'background: #fee2e2; opacity: 0.8;' : '';
+                        
+                        html += `
+                            <tr style="${rowStyle}">
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        ${review.user?.avatar ? `<img src="${review.user.avatar}" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">` : '<div style="width: 40px; height: 40px; border-radius: 50%; background: #667eea; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;">' + (review.user?.fullName?.charAt(0) || '?') + '</div>'}
+                                        <div>
+                                            <div style="font-weight: 600;">${review.user?.fullName || 'N/A'}</div>
+                                            <div style="font-size: 12px; color: #999;">${review.user?.email || ''}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        ${review.product?.image ? `<img src="${review.product.image}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 5px;">` : ''}
+                                        <div style="font-weight: 500;">${review.product?.name || 'N/A'}</div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-size: 18px; color: #f39c12;">${stars}</div>
+                                    <div style="font-size: 12px; color: #999;">${review.rating}/5</div>
+                                </td>
+                                <td>
+                                    <div style="max-width: 300px; word-wrap: break-word;">
+                                        ${review.comment || '<span style="color: #999;">Không có bình luận</span>'}
+                                    </div>
+                                    ${review.images && review.images.length > 0 ? `
+                                        <div style="margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap;">
+                                            ${review.images.map(img => `<img src="${img}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 5px; cursor: pointer;" onclick="window.open('${img}', '_blank')">`).join('')}
+                                        </div>
+                                    ` : ''}
+                                </td>
+                                <td>${statusBadge}</td>
+                                <td style="font-size: 12px; color: #666;">${date}</td>
+                                <td>
+                                    <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                        <button class="btn ${isVisible ? 'btn-warning' : 'btn-success'}" onclick="toggleReviewVisibility('${review._id}', ${!isVisible})" style="padding: 5px 10px; font-size: 12px;">
+                                            ${isVisible ? '👁️ Ẩn' : '👁️ Hiện'}
+                                        </button>
+                                        <button class="btn btn-danger" onclick="deleteReview('${review._id}')" style="padding: 5px 10px; font-size: 12px;">Xóa</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += '</tbody></table>';
+                } else {
+                    html += '<p style="text-align: center; padding: 40px; color: #999;">Không có đánh giá nào!</p>';
+                }
+                
+                document.getElementById('reviewsContent').innerHTML = html;
+            } catch (error) {
+                console.error('Load reviews error:', error);
+                const errorMessage = error.message || 'Lỗi tải đánh giá!';
+                document.getElementById('reviewsContent').innerHTML = `
+                    <p style="color: red; text-align: center; padding: 40px;">
+                        ${errorMessage}<br>
+                        <small style="color: #999; margin-top: 10px; display: block;">Vui lòng kiểm tra console (F12) để xem chi tiết lỗi.</small>
+                    </p>
+                `;
+            }
+        }
+        
+        async function toggleReviewVisibility(reviewId, makeVisible) {
+            try {
+                const response = await fetch(`${API_BASE}/reviews/admin/${reviewId}/toggle-visibility`, {
+                    method: 'PUT',
+                    headers: getAuthHeaders()
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert(data.message || (makeVisible ? 'Hiển thị đánh giá thành công!' : 'Ẩn đánh giá thành công!'));
+                    loadReviews();
+                } else {
+                    alert(data.message || 'Lỗi cập nhật trạng thái!');
+                }
+            } catch (error) {
+                console.error('Toggle review visibility error:', error);
+                alert('Lỗi kết nối!');
+            }
+        }
+        
+        async function deleteReview(reviewId) {
+            if (!confirm('Bạn có chắc muốn xóa đánh giá này?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/reviews/admin/${reviewId}`, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('Xóa đánh giá thành công!');
+                    loadReviews();
+                } else {
+                    alert(data.message || 'Lỗi xóa đánh giá!');
+                }
+            } catch (error) {
+                console.error('Delete review error:', error);
+                alert('Lỗi kết nối!');
+            }
+        }
 
         function loadAPIs() {
             const apiList = document.getElementById('apiList');

@@ -7,6 +7,7 @@ const reviewSchema = new mongoose.Schema({
   rating: { type: Number, required: true, min: 1, max: 5 }, // 1-5 sao
   comment: { type: String },
   images: [{ type: String }], // Ảnh đánh giá
+  isVisible: { type: Boolean, default: true }, // Admin có thể ẩn/hiện đánh giá
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

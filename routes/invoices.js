@@ -80,15 +80,67 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
   console.log('User ID:', req.user.userId);
   
   try {
-    const { shippingAddress, items, discount, paymentMethod, notes, voucherCode } = req.body;
+    const { shippingAddress, addressId, items, discount, paymentMethod, notes, voucherCode } = req.body;
     
     // ============================================
-    // 1. VALIDATE INPUT
+    // 1. VALIDATE VÀ LẤY ĐỊA CHỈ GIAO HÀNG
     // ============================================
-    if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
+    let finalShippingAddress = null;
+    
+    // Nếu có addressId, lấy địa chỉ từ database
+    if (addressId) {
+      console.log('📍 Lấy địa chỉ từ ID:', addressId);
+      const Address = require('../models/Address');
+      const address = await Address.findOne({ _id: addressId, user: req.user.userId });
+      if (!address) {
+        return res.status(400).json({
+          success: false,
+          message: "Không tìm thấy địa chỉ hoặc địa chỉ không thuộc về bạn!",
+          data: null
+        });
+      }
+      finalShippingAddress = {
+        fullName: address.fullName,
+        phone: address.phone,
+        address: address.address,
+        ward: address.ward || "",
+        district: address.district || "",
+        city: address.city
+      };
+      console.log('✅ Địa chỉ từ database:', finalShippingAddress);
+    } 
+    // Nếu có shippingAddress object, sử dụng trực tiếp
+    else if (shippingAddress) {
+      console.log('📍 Sử dụng địa chỉ từ request body');
+      // Validate đầy đủ thông tin
+      if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
+        console.error('❌ Thiếu thông tin địa chỉ:', {
+          hasFullName: !!shippingAddress.fullName,
+          hasPhone: !!shippingAddress.phone,
+          hasAddress: !!shippingAddress.address,
+          hasCity: !!shippingAddress.city
+        });
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng! (Cần: fullName, phone, address, city)",
+          data: null
+        });
+      }
+      finalShippingAddress = {
+        fullName: String(shippingAddress.fullName).trim(),
+        phone: String(shippingAddress.phone).trim(),
+        address: String(shippingAddress.address).trim(),
+        ward: shippingAddress.ward ? String(shippingAddress.ward).trim() : "",
+        district: shippingAddress.district ? String(shippingAddress.district).trim() : "",
+        city: String(shippingAddress.city).trim()
+      };
+      console.log('✅ Địa chỉ từ request:', finalShippingAddress);
+    } 
+    // Nếu không có cả hai
+    else {
       return res.status(400).json({
         success: false,
-        message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng!",
+        message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)",
         data: null
       });
     }
@@ -110,56 +162,10 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
     }
 
     // ============================================
-    // 2. VALIDATE VOUCHER (nếu có)
+    // 2. VALIDATE VOUCHER (nếu có) - Tạm thời chỉ khai báo, sẽ validate sau khi tính subtotal
     // ============================================
+    let voucher = null;
     let voucherDiscount = 0;
-    let finalDiscount = discount || 0;
-    
-    if (voucherCode) {
-      const voucher = await Voucher.findOne({ code: voucherCode });
-      
-      if (!voucher) {
-        return res.status(400).json({
-          success: false,
-          message: "Mã voucher không hợp lệ!",
-          data: null
-        });
-      }
-
-      // Kiểm tra voucher còn hiệu lực
-      const now = new Date();
-      if (voucher.status !== 1) {
-        return res.status(400).json({
-          success: false,
-          message: "Voucher không còn hiệu lực!",
-          data: null
-        });
-      }
-
-      if (voucher.startDate && new Date(voucher.startDate) > now) {
-        return res.status(400).json({
-          success: false,
-          message: "Voucher chưa đến thời gian sử dụng!",
-          data: null
-        });
-      }
-
-      if (voucher.endDate && new Date(voucher.endDate) < now) {
-        return res.status(400).json({
-          success: false,
-          message: "Voucher đã hết hạn!",
-          data: null
-        });
-      }
-
-      if (voucher.usedCount >= voucher.quantity) {
-        return res.status(400).json({
-          success: false,
-          message: "Voucher đã hết lượt sử dụng!",
-          data: null
-        });
-      }
-    }
 
     // ============================================
     // 3. TÍNH TOÁN TỔNG TIỀN
@@ -210,18 +216,49 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
       });
     }
 
-    // Áp dụng voucher discount
+    // ============================================
+    // 4. VALIDATE VÀ ÁP DỤNG VOUCHER (sau khi tính subtotal)
+    // ============================================
     if (voucherCode) {
-      const voucher = await Voucher.findOne({ code: voucherCode });
-      
-      if (voucher.type === 'percentage') {
-        voucherDiscount = (subtotal * voucher.value) / 100;
-      } else {
-        voucherDiscount = voucher.value;
+      voucher = await Voucher.findOne({ code: voucherCode.toUpperCase() })
+        .populate("applicableProducts", "name category")
+        .populate("applicableCategories", "name")
+        .populate("applicableUsers", "fullName email");
+
+      if (!voucher) {
+        return res.status(400).json({
+          success: false,
+          message: "Mã voucher không tồn tại!",
+          data: null
+        });
       }
 
-      // Kiểm tra điều kiện đơn hàng tối thiểu
-      if (voucher.minOrderValue && subtotal < voucher.minOrderValue) {
+      // Kiểm tra voucher hợp lệ
+      const now = new Date();
+      if (voucher.status === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Voucher đã bị vô hiệu hóa!",
+          data: null
+        });
+      }
+      if (voucher.usedCount >= voucher.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: "Voucher đã hết lượt sử dụng!",
+          data: null
+        });
+      }
+      if (now < voucher.startDate || now > voucher.endDate) {
+        return res.status(400).json({
+          success: false,
+          message: "Voucher không còn hiệu lực!",
+          data: null
+        });
+      }
+
+      // Kiểm tra đơn hàng tối thiểu (PHẢI KIỂM TRA TRƯỚC KHI TÍNH DISCOUNT)
+      if (subtotal < voucher.minOrderValue) {
         return res.status(400).json({
           success: false,
           message: `Đơn hàng tối thiểu ${voucher.minOrderValue.toLocaleString('vi-VN')} VNĐ để sử dụng voucher này!`,
@@ -229,25 +266,51 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
         });
       }
 
-      // Giới hạn discount tối đa
-      if (voucher.maxDiscount && voucherDiscount > voucher.maxDiscount) {
-        voucherDiscount = voucher.maxDiscount;
+      // Kiểm tra user được áp dụng
+      if (voucher.applicableUsers.length > 0) {
+        const isApplicable = voucher.applicableUsers.some(
+          id => id.toString() === req.user.userId.toString()
+        );
+        if (!isApplicable) {
+          return res.status(400).json({
+            success: false,
+            message: "Bạn không được sử dụng voucher này!",
+            data: null
+          });
+        }
       }
 
-      finalDiscount = (discount || 0) + voucherDiscount;
+      // Kiểm tra sản phẩm áp dụng
+      const productIds = items.map(item => item.product);
+      if (voucher.applicableProducts.length > 0) {
+        const applicable = productIds.some(productId => 
+          voucher.applicableProducts.some(p => p._id.toString() === productId.toString())
+        );
+        if (!applicable) {
+          return res.status(400).json({
+            success: false,
+            message: "Voucher không áp dụng cho sản phẩm trong giỏ hàng!",
+            data: null
+          });
+        }
+      }
+
+      // Tính toán giảm giá (SAU KHI VALIDATE)
+      if (voucher.type === "percentage") {
+        voucherDiscount = (subtotal * voucher.value) / 100;
+        if (voucher.maxDiscount && voucherDiscount > voucher.maxDiscount) {
+          voucherDiscount = voucher.maxDiscount;
+        }
+      } else {
+        voucherDiscount = voucher.value;
+      }
     }
 
     // Tính phí vận chuyển
     const shippingFee = 30000; // Mặc định 30k
     
-    // Tính tổng tiền cuối cùng
-    const total = subtotal + shippingFee - finalDiscount;
-
-    // Xử lý voucher
-    let voucherDoc = null;
-    if (voucherCode) {
-      voucherDoc = await Voucher.findOne({ code: voucherCode.toUpperCase() });
-    }
+    // Tính tổng tiền cuối cùng (chỉ trừ voucherDiscount, không trừ discount từ request body)
+    const total = subtotal + shippingFee - voucherDiscount;
 
     // ============================================
     // 5. TẠO ORDER NUMBER TRƯỚC KHI TẠO ORDER
@@ -262,20 +325,20 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
       orderNumber: orderNumber, // ✅ QUAN TRỌNG: Phải set orderNumber trước
       customer: req.user.userId, // Sử dụng user từ token
       shippingAddress: {
-        fullName: shippingAddress.fullName,
-        phone: shippingAddress.phone,
-        address: shippingAddress.address,
-        ward: shippingAddress.ward || "",
-        district: shippingAddress.district || "",
-        city: shippingAddress.city
+        fullName: finalShippingAddress.fullName,
+        phone: finalShippingAddress.phone,
+        address: finalShippingAddress.address,
+        ward: finalShippingAddress.ward || "",
+        district: finalShippingAddress.district || "",
+        city: finalShippingAddress.city
       },
       items: orderItems,
       subtotal: subtotal,
       shippingFee: shippingFee,
       discount: 0, // Discount tổng (không dùng trong invoice)
-      voucher: voucherDoc ? voucherDoc._id : null,
+      voucher: voucher ? voucher._id : null,
       voucherCode: voucherCode ? voucherCode.toUpperCase() : null,
-      voucherDiscount: finalDiscount,
+      voucherDiscount: voucherDiscount,
       total: total > 0 ? total : 0,
       paymentMethod: finalPaymentMethod,
       paymentStatus: (finalPaymentMethod === "COD" || finalPaymentMethod === "cash") ? "pending" : "pending",
@@ -427,9 +490,10 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
     }
 
     // Tăng số lượt sử dụng voucher (chỉ với COD/cash)
-    if (voucherDoc) {
-      voucherDoc.usedCount += 1;
-      await voucherDoc.save();
+    // Tăng số lần sử dụng voucher (chỉ với COD/cash, online payment sẽ tăng sau khi thanh toán thành công)
+    if (voucher && (finalPaymentMethod === "COD" || finalPaymentMethod === "cash")) {
+      voucher.usedCount += 1;
+      await voucher.save();
     }
 
     // ============================================

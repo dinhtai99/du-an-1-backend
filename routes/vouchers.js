@@ -62,6 +62,7 @@ router.get("/", async (req, res) => {
     const vouchers = await Voucher.find(query)
       .populate("applicableProducts", "name")
       .populate("applicableCategories", "name")
+      .populate("applicableUsers", "fullName email")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -95,6 +96,9 @@ router.get("/", async (req, res) => {
         startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
         endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
         status: statusStr, // Map status (0/1) → status ("active"/"inactive"/"expired")
+        applicableProducts: voucher.applicableProducts || [],
+        applicableCategories: voucher.applicableCategories || [],
+        applicableUsers: voucher.applicableUsers || [], // Thêm applicableUsers vào response
         createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
         updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
       };
@@ -224,7 +228,8 @@ router.get("/:id", async (req, res) => {
   try {
     const voucher = await Voucher.findById(req.params.id)
       .populate("applicableProducts", "name image price")
-      .populate("applicableCategories", "name");
+      .populate("applicableCategories", "name")
+      .populate("applicableUsers", "fullName email");
 
     if (!voucher) {
       return res.status(404).json({ 
@@ -233,6 +238,11 @@ router.get("/:id", async (req, res) => {
         data: null
       });
     }
+
+    console.log('👁️ GET /vouchers/:id - Voucher from DB:', voucher._id);
+    console.log('👁️ GET /vouchers/:id - applicableUsers from DB:', voucher.applicableUsers);
+    console.log('👁️ GET /vouchers/:id - applicableUsers type:', typeof voucher.applicableUsers, Array.isArray(voucher.applicableUsers));
+    console.log('👁️ GET /vouchers/:id - applicableUsers length:', voucher.applicableUsers?.length);
 
     // Map voucher sang format Android app mong đợi
     const now = new Date();
@@ -258,9 +268,15 @@ router.get("/:id", async (req, res) => {
       startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
       endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
       status: statusStr,
+      applicableProducts: voucher.applicableProducts || [],
+      applicableCategories: voucher.applicableCategories || [],
+      applicableUsers: voucher.applicableUsers || [], // Thêm applicableUsers vào response
       createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
       updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
     };
+
+    console.log('👁️ GET /vouchers/:id - mappedVoucher.applicableUsers:', mappedVoucher.applicableUsers);
+    console.log('👁️ GET /vouchers/:id - mappedVoucher.applicableUsers length:', mappedVoucher.applicableUsers.length);
 
     res.json({
       success: true,
@@ -416,6 +432,14 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
       return res.status(400).json({ message: "Số tiền giảm giá phải lớn hơn 0!" });
     }
 
+    // Xử lý applicableUsers: filter các ID hợp lệ
+    let finalApplicableUsers = [];
+    if (Array.isArray(applicableUsers) && applicableUsers.length > 0) {
+      finalApplicableUsers = applicableUsers.filter(id => id && id.toString().trim() !== '');
+    }
+    console.log('💾 Creating voucher with applicableUsers:', finalApplicableUsers);
+    console.log('💾 ApplicableUsers length:', finalApplicableUsers.length);
+
     const voucher = new Voucher({
       code: code.toUpperCase(),
       name,
@@ -429,7 +453,7 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
       endDate: new Date(endDate),
       applicableProducts: applicableProducts || [],
       applicableCategories: applicableCategories || [],
-      applicableUsers: applicableUsers || [],
+      applicableUsers: finalApplicableUsers, // Sử dụng mảng đã filter
       status: status !== undefined ? status : 1,
     });
 
@@ -437,6 +461,7 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
 
     await voucher.populate("applicableProducts", "name");
     await voucher.populate("applicableCategories", "name");
+    await voucher.populate("applicableUsers", "fullName email");
 
     res.status(201).json({
       message: "Tạo voucher thành công!",
@@ -454,6 +479,10 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
 // ✏️ Cập nhật voucher (Admin)
 router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
+    console.log('📥 PUT /vouchers/:id - Request body:', JSON.stringify(req.body, null, 2));
+    console.log('📥 applicableUsers từ request:', req.body.applicableUsers);
+    console.log('📥 applicableUsers type:', typeof req.body.applicableUsers, Array.isArray(req.body.applicableUsers));
+    
     const {
       code,
       name,
@@ -463,6 +492,7 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
       minOrderValue,
       maxDiscount,
       quantity,
+      usedCount,
       startDate,
       endDate,
       applicableProducts,
@@ -504,11 +534,47 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
       voucher.maxDiscount = type === "percentage" ? maxDiscount : null;
     }
     if (quantity !== undefined) voucher.quantity = quantity;
+    if (usedCount !== undefined) {
+      // Cho phép admin reset số đã dùng (chỉ khi >= 0 và <= quantity)
+      if (usedCount < 0) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Số đã dùng không thể nhỏ hơn 0!",
+          data: null
+        });
+      }
+      if (usedCount > voucher.quantity) {
+        return res.status(400).json({ 
+          success: false,
+          message: "Số đã dùng không thể lớn hơn số lượng!",
+          data: null
+        });
+      }
+      voucher.usedCount = usedCount;
+    }
     if (startDate) voucher.startDate = new Date(startDate);
     if (endDate) voucher.endDate = new Date(endDate);
     if (applicableProducts !== undefined) voucher.applicableProducts = applicableProducts;
     if (applicableCategories !== undefined) voucher.applicableCategories = applicableCategories;
-    if (applicableUsers !== undefined) voucher.applicableUsers = applicableUsers;
+    if (applicableUsers !== undefined) {
+      console.log('🔧 Processing applicableUsers:', applicableUsers);
+      console.log('🔧 applicableUsers type:', typeof applicableUsers, Array.isArray(applicableUsers));
+      
+      // Đảm bảo applicableUsers là mảng
+      if (Array.isArray(applicableUsers)) {
+        // Filter ra các ID hợp lệ (không rỗng)
+        const filtered = applicableUsers.filter(id => id && id.toString().trim() !== '');
+        voucher.applicableUsers = filtered;
+        console.log('💾 Updating applicableUsers:', voucher.applicableUsers);
+        console.log('💾 ApplicableUsers length:', voucher.applicableUsers.length);
+        console.log('💾 ApplicableUsers before save:', JSON.stringify(voucher.applicableUsers));
+      } else {
+        console.log('⚠️ applicableUsers không phải là mảng, set về []');
+        voucher.applicableUsers = [];
+      }
+    } else {
+      console.log('ℹ️ applicableUsers là undefined, không cập nhật');
+    }
     if (status !== undefined) voucher.status = status;
 
     // Kiểm tra thời gian
@@ -536,10 +602,21 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
       });
     }
 
+    console.log('💾 Before save - applicableUsers:', voucher.applicableUsers);
+    console.log('💾 Before save - applicableUsers length:', voucher.applicableUsers?.length);
+    
     await voucher.save();
+    
+    console.log('💾 After save - applicableUsers:', voucher.applicableUsers);
+    console.log('💾 After save - applicableUsers length:', voucher.applicableUsers?.length);
 
     await voucher.populate("applicableProducts", "name");
     await voucher.populate("applicableCategories", "name");
+    await voucher.populate("applicableUsers", "fullName email");
+    
+    console.log('💾 After populate - applicableUsers:', voucher.applicableUsers);
+    console.log('💾 After populate - applicableUsers length:', voucher.applicableUsers?.length);
+    console.log('💾 After populate - applicableUsers details:', JSON.stringify(voucher.applicableUsers, null, 2));
 
     // Map voucher sang format Android app mong đợi
     const now = new Date();
@@ -565,6 +642,9 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
       startDate: voucher.startDate ? voucher.startDate.toISOString().split('T')[0] : null,
       endDate: voucher.endDate ? voucher.endDate.toISOString().split('T')[0] : null,
       status: statusStr,
+      applicableProducts: voucher.applicableProducts || [],
+      applicableCategories: voucher.applicableCategories || [],
+      applicableUsers: voucher.applicableUsers || [], // Thêm applicableUsers vào response
       createdAt: voucher.createdAt ? voucher.createdAt.toISOString() : null,
       updatedAt: voucher.updatedAt ? voucher.updatedAt.toISOString() : null,
     };
