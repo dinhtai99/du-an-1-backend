@@ -1,11 +1,22 @@
-const express = require("express");
-const router = express.Router();
-const jwt = require("jsonwebtoken");
-const Voucher = require("../models/Voucher");
-const Product = require("../models/Product");
-const { verifyToken, requireAdmin } = require("../middleware/authMiddleware");
+// Import các thư viện và modules cần thiết
+const express = require("express"); // Framework web server
+const router = express.Router(); // Router để định nghĩa các routes
+const jwt = require("jsonwebtoken"); // Thư viện JWT để verify token
+const Voucher = require("../models/Voucher"); // Model Voucher từ database
+const Product = require("../models/Product"); // Model Product từ database
+const { verifyToken, requireAdmin } = require("../middleware/authMiddleware"); // Middleware xác thực và phân quyền
 
-// 📋 Lấy danh sách voucher (Public: chỉ voucher hợp lệ, Admin: tất cả)
+/**
+ * 📋 Lấy danh sách voucher (Public: chỉ voucher hợp lệ, Admin: tất cả)
+ * GET /api/vouchers
+ * Lấy danh sách voucher (Public: chỉ voucher hợp lệ, Admin: tất cả)
+ * @query {String} code - Tìm kiếm theo mã voucher (optional)
+ * @query {Number} status - Lọc theo trạng thái (0=ẩn, 1=hiển thị) (optional, chỉ admin)
+ * @query {Boolean} active - Lọc voucher đang hoạt động (optional)
+ * @query {Number} page - Trang hiện tại (optional, mặc định 1)
+ * @query {Number} limit - Số lượng mỗi trang (optional, mặc định 100)
+ * @returns {Object} { success, message, data: Array }
+ */
 router.get("/", async (req, res) => {
   try {
     const { code, status, active, page = 1, limit = 100 } = req.query;
@@ -120,8 +131,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-// 🔍 Validate voucher code (GET /api/vouchers/validate/{code})
-// ⚠️ PHẢI ĐẶT TRƯỚC route /:id để Express match đúng
+/**
+ * 🔍 Validate voucher code
+ * GET /api/vouchers/validate/:code
+ * Kiểm tra và validate mã voucher
+ * ⚠️ PHẢI ĐẶT TRƯỚC route /:id để Express match đúng
+ * @param {String} code - Mã voucher cần validate
+ * @returns {Object} { success, message, data }
+ */
 router.get("/validate/:code", async (req, res) => {
   try {
     const { code } = req.params;
@@ -223,7 +240,13 @@ router.get("/validate/:code", async (req, res) => {
   }
 });
 
-// 📋 Lấy chi tiết voucher
+/**
+ * 📋 Lấy chi tiết voucher
+ * GET /api/vouchers/:id
+ * Lấy thông tin chi tiết của một voucher
+ * @param {String} id - ID của voucher
+ * @returns {Object} { success, message, data }
+ */
 router.get("/:id", async (req, res) => {
   try {
     const voucher = await Voucher.findById(req.params.id)
@@ -293,7 +316,16 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// 🔍 Kiểm tra voucher có hợp lệ không
+/**
+ * 🔍 Kiểm tra voucher có hợp lệ không
+ * POST /api/vouchers/check
+ * Kiểm tra voucher có hợp lệ với đơn hàng cụ thể (tính toán giảm giá)
+ * @middleware verifyToken - Phải đăng nhập
+ * @body {String} code - Mã voucher (required)
+ * @body {Number} orderValue - Giá trị đơn hàng (optional)
+ * @body {Array} productIds - Danh sách ID sản phẩm trong đơn (optional)
+ * @returns {Object} { valid, voucher: { id, code, name, type, value, discountAmount, maxDiscount } }
+ */
 router.post("/check", verifyToken, async (req, res) => {
   try {
     const { code, orderValue, productIds } = req.body;
@@ -389,7 +421,28 @@ router.post("/check", verifyToken, async (req, res) => {
   }
 });
 
-// ➕ Tạo voucher mới (Admin)
+/**
+ * ➕ Tạo voucher mới (Admin)
+ * POST /api/vouchers
+ * Tạo voucher mới (chỉ admin)
+ * @middleware verifyToken - Phải đăng nhập
+ * @middleware requireAdmin - Chỉ admin mới được truy cập
+ * @body {String} code - Mã voucher (required)
+ * @body {String} name - Tên voucher (required)
+ * @body {String} description - Mô tả (optional)
+ * @body {String} type - Loại giảm giá (percentage|fixed) (required)
+ * @body {Number} value - Giá trị giảm giá (required)
+ * @body {Number} minOrderValue - Đơn hàng tối thiểu (optional)
+ * @body {Number} maxDiscount - Giảm giá tối đa (optional, chỉ khi type=percentage)
+ * @body {Number} quantity - Số lượng voucher (required)
+ * @body {String} startDate - Ngày bắt đầu (YYYY-MM-DD) (required)
+ * @body {String} endDate - Ngày kết thúc (YYYY-MM-DD) (required)
+ * @body {Array} applicableProducts - Danh sách ID sản phẩm áp dụng (optional)
+ * @body {Array} applicableCategories - Danh sách ID danh mục áp dụng (optional)
+ * @body {Array} applicableUsers - Danh sách ID user áp dụng (optional)
+ * @body {Number} status - Trạng thái (0=ẩn, 1=hiển thị) (optional, mặc định 1)
+ * @returns {Object} { message, voucher }
+ */
 router.post("/", verifyToken, requireAdmin, async (req, res) => {
   try {
     const {
@@ -476,7 +529,30 @@ router.post("/", verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
-// ✏️ Cập nhật voucher (Admin)
+/**
+ * ✏️ Cập nhật voucher (Admin)
+ * PUT /api/vouchers/:id
+ * Cập nhật thông tin voucher (chỉ admin)
+ * @middleware verifyToken - Phải đăng nhập
+ * @middleware requireAdmin - Chỉ admin mới được truy cập
+ * @param {String} id - ID của voucher
+ * @body {String} code - Mã voucher (optional)
+ * @body {String} name - Tên voucher (optional)
+ * @body {String} description - Mô tả (optional)
+ * @body {String} type - Loại giảm giá (percentage|fixed) (optional)
+ * @body {Number} value - Giá trị giảm giá (optional)
+ * @body {Number} minOrderValue - Đơn hàng tối thiểu (optional)
+ * @body {Number} maxDiscount - Giảm giá tối đa (optional)
+ * @body {Number} quantity - Số lượng voucher (optional)
+ * @body {Number} usedCount - Số đã sử dụng (optional, admin có thể reset)
+ * @body {String} startDate - Ngày bắt đầu (YYYY-MM-DD) (optional)
+ * @body {String} endDate - Ngày kết thúc (YYYY-MM-DD) (optional)
+ * @body {Array} applicableProducts - Danh sách ID sản phẩm áp dụng (optional)
+ * @body {Array} applicableCategories - Danh sách ID danh mục áp dụng (optional)
+ * @body {Array} applicableUsers - Danh sách ID user áp dụng (optional)
+ * @body {Number} status - Trạng thái (0=ẩn, 1=hiển thị) (optional)
+ * @returns {Object} { success, message, data }
+ */
 router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     console.log('📥 PUT /vouchers/:id - Request body:', JSON.stringify(req.body, null, 2));
@@ -671,7 +747,15 @@ router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
-// ❌ Xóa voucher (Admin)
+/**
+ * ❌ Xóa voucher (Admin)
+ * DELETE /api/vouchers/:id
+ * Xóa voucher (chỉ admin)
+ * @middleware verifyToken - Phải đăng nhập
+ * @middleware requireAdmin - Chỉ admin mới được truy cập
+ * @param {String} id - ID của voucher
+ * @returns {Object} { message }
+ */
 router.delete("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     const voucher = await Voucher.findById(req.params.id);

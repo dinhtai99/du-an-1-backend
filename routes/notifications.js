@@ -1,38 +1,61 @@
-const express = require("express");
-const router = express.Router();
-const Notification = require("../models/Notification");
-const { verifyToken } = require("../middleware/authMiddleware");
+// Import các thư viện và modules cần thiết
+const express = require("express"); // Framework web server
+const router = express.Router(); // Router để định nghĩa các routes
+const Notification = require("../models/Notification"); // Model Notification từ database
+const { verifyToken } = require("../middleware/authMiddleware"); // Middleware xác thực JWT token
 
-// 🔔 Lấy danh sách thông báo
+/**
+ * 🔔 Lấy danh sách thông báo
+ * GET /api/notifications
+ * Lấy danh sách thông báo của user đang đăng nhập
+ * @middleware verifyToken - Phải đăng nhập
+ * @query {Boolean} isRead - Lọc theo trạng thái đã đọc/chưa đọc (optional)
+ * @query {String} type - Lọc theo loại thông báo (optional)
+ * @query {Number} page - Trang hiện tại (optional, mặc định 1)
+ * @query {Number} limit - Số lượng mỗi trang (optional, mặc định 20)
+ * @returns {Object} { notifications, total, unreadCount, page, limit, totalPages }
+ */
 router.get("/", verifyToken, async (req, res) => {
   try {
+    // Lấy các query parameters từ request
     const { isRead, type, page = 1, limit = 20 } = req.query;
+    
+    // Khởi tạo query object: chỉ lấy thông báo của user đang đăng nhập
     const query = { user: req.user.userId };
 
+    // Lọc theo trạng thái đã đọc/chưa đọc
     if (isRead !== undefined) {
-      query.isRead = isRead === "true";
+      query.isRead = isRead === "true"; // Chuyển string "true" thành boolean true
     }
 
+    // Lọc theo loại thông báo (order, product, system, etc.)
     if (type) {
       query.type = type;
     }
 
+    // Tính toán skip cho pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
+    
+    // Tìm thông báo với các filter, sort, skip, limit
     const notifications = await Notification.find(query)
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1 }) // Sắp xếp theo ngày tạo giảm dần (mới nhất trước)
       .skip(skip)
       .limit(parseInt(limit));
 
+    // Đếm tổng số thông báo thỏa mãn query (không phân trang)
     const total = await Notification.countDocuments(query);
+    
+    // Đếm số thông báo chưa đọc của user
     const unreadCount = await Notification.countDocuments({ user: req.user.userId, isRead: false });
 
+    // Trả về danh sách thông báo với pagination info và số thông báo chưa đọc
     res.json({
-      notifications,
-      total,
-      unreadCount,
-      page: parseInt(page),
-      limit: parseInt(limit),
-      totalPages: Math.ceil(total / parseInt(limit)),
+      notifications, // Danh sách thông báo
+      total, // Tổng số thông báo thỏa mãn query
+      unreadCount, // Số thông báo chưa đọc
+      page: parseInt(page), // Trang hiện tại
+      limit: parseInt(limit), // Số lượng mỗi trang
+      totalPages: Math.ceil(total / parseInt(limit)), // Tổng số trang
     });
   } catch (error) {
     console.error("Get notifications error:", error);
@@ -40,7 +63,14 @@ router.get("/", verifyToken, async (req, res) => {
   }
 });
 
-// 🔔 Đánh dấu đã đọc
+/**
+ * 🔔 Đánh dấu đã đọc
+ * PUT /api/notifications/:id/read
+ * Đánh dấu một thông báo là đã đọc
+ * @middleware verifyToken - Phải đăng nhập
+ * @param {String} id - ID của thông báo
+ * @returns {Object} { message, notification }
+ */
 router.put("/:id/read", verifyToken, async (req, res) => {
   try {
     const notification = await Notification.findOne({
@@ -62,7 +92,13 @@ router.put("/:id/read", verifyToken, async (req, res) => {
   }
 });
 
-// 🔔 Đánh dấu tất cả đã đọc
+/**
+ * 🔔 Đánh dấu tất cả đã đọc
+ * PUT /api/notifications/read-all
+ * Đánh dấu tất cả thông báo của user là đã đọc
+ * @middleware verifyToken - Phải đăng nhập
+ * @returns {Object} { message }
+ */
 router.put("/read-all", verifyToken, async (req, res) => {
   try {
     await Notification.updateMany(
@@ -77,7 +113,14 @@ router.put("/read-all", verifyToken, async (req, res) => {
   }
 });
 
-// 🗑️ Xóa thông báo
+/**
+ * 🗑️ Xóa thông báo
+ * DELETE /api/notifications/:id
+ * Xóa một thông báo (chỉ thông báo của chính mình)
+ * @middleware verifyToken - Phải đăng nhập
+ * @param {String} id - ID của thông báo
+ * @returns {Object} { message }
+ */
 router.delete("/:id", verifyToken, async (req, res) => {
   try {
     const notification = await Notification.findOneAndDelete({

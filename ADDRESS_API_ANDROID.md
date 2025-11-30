@@ -202,53 +202,165 @@ Khi sử dụng định vị, đảm bảo map đúng các trường:
 ```kotlin
 // Ví dụ Android (Kotlin)
 data class ShippingAddress(
-    val fullName: String,    // Tên người nhận
-    val phone: String,       // SĐT
-    val address: String,     // Địa chỉ chi tiết (số nhà, tên đường)
+    val fullName: String,    // Tên người nhận (tối thiểu 2 ký tự)
+    val phone: String,       // SĐT (10-11 số, format: 0xxxxxxxxx)
+    val address: String,     // Địa chỉ chi tiết (số nhà, tên đường, tối thiểu 5 ký tự)
     val ward: String? = null,      // Phường/Xã (Optional)
     val district: String? = null,  // Quận/Huyện (Optional)
-    val city: String         // Tỉnh/Thành phố (Required)
+    val city: String? = null        // Tỉnh/Thành phố (Optional, nhưng khuyến nghị có)
 )
 
 // Khi lấy từ Geocoder/Google Places API
 val shippingAddress = ShippingAddress(
-    fullName = userFullName,
-    phone = userPhone,
-    address = geocoderResult.streetAddress,  // "123 Đường ABC"
-    ward = geocoderResult.ward,             // "Phường 1"
-    district = geocoderResult.district,      // "Quận 1"
-    city = geocoderResult.city              // "Hồ Chí Minh"
+    fullName = userFullName.trim(),
+    phone = normalizePhone(userPhone),  // Xem hàm normalizePhone bên dưới
+    address = geocoderResult.streetAddress.trim(),  // "123 Đường ABC"
+    ward = geocoderResult.ward?.trim(),             // "Phường 1" hoặc null
+    district = geocoderResult.district?.trim(),      // "Quận 1" hoặc null
+    city = geocoderResult.city?.trim()              // "Hồ Chí Minh" hoặc null
 )
-```
 
-### 2. Validation
-
-API sẽ kiểm tra:
-- ✅ `fullName` - Bắt buộc, không được rỗng
-- ✅ `phone` - Bắt buộc, không được rỗng
-- ✅ `address` - Bắt buộc, không được rỗng
-- ✅ `city` - Bắt buộc, không được rỗng
-- ⚠️ `ward` - Tùy chọn
-- ⚠️ `district` - Tùy chọn
-
-### 3. Error Messages
-
-Nếu thiếu thông tin, API sẽ trả về:
-```json
-{
-  "success": false,
-  "message": "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng! (Cần: fullName, phone, address, city)",
-  "data": null
+// Helper function để normalize phone number
+fun normalizePhone(phone: String): String {
+    // Loại bỏ tất cả ký tự không phải số
+    var normalized = phone.replace(Regex("[^0-9]"), "")
+    
+    // Nếu bắt đầu bằng 84, chuyển thành 0
+    if (normalized.startsWith("84")) {
+        normalized = "0" + normalized.substring(2)
+    }
+    
+    // Validate độ dài (10-11 số)
+    if (normalized.length < 10 || normalized.length > 11) {
+        throw IllegalArgumentException("Số điện thoại không hợp lệ: $phone")
+    }
+    
+    return normalized
 }
 ```
 
-### 4. Ưu tiên sử dụng `addressId`
+### 2. Validation Rules (Backend tự động normalize)
+
+API sẽ tự động normalize và validate:
+- ✅ `fullName` - Bắt buộc, tối thiểu 2 ký tự (tự động loại bỏ khoảng trắng thừa, số ở đầu)
+- ✅ `phone` - Bắt buộc, 10-11 số (tự động normalize: loại bỏ ký tự đặc biệt, chuyển 84xxx thành 0xxx)
+- ✅ `address` - Bắt buộc, tối thiểu 5 ký tự (tự động loại bỏ khoảng trắng thừa, dấu phẩy không cần thiết)
+- ⚠️ `ward` - Tùy chọn (tự động loại bỏ "Phường", "Xã", "P." ở đầu nếu có)
+- ⚠️ `district` - Tùy chọn (tự động loại bỏ "Quận", "Huyện", "Q.", "H." ở đầu nếu có)
+- ⚠️ `city` - Tùy chọn (tự động loại bỏ "Tỉnh", "Thành phố", "TP." ở đầu nếu có)
+
+**Lưu ý:** Backend sẽ tự động normalize địa chỉ, nhưng bạn nên gửi địa chỉ sạch nhất có thể để tránh lỗi.
+
+### 3. Error Messages
+
+Nếu địa chỉ không hợp lệ, API sẽ trả về:
+```json
+{
+  "success": false,
+  "message": "Địa chỉ không hợp lệ!",
+  "errors": [
+    "Họ tên phải có ít nhất 2 ký tự",
+    "Số điện thoại không hợp lệ (cần ít nhất 10 số)",
+    "Địa chỉ chi tiết phải có ít nhất 5 ký tự"
+  ],
+  "details": [
+    "Họ tên phải có ít nhất 2 ký tự",
+    "Số điện thoại không hợp lệ (cần ít nhất 10 số)"
+  ]
+}
+```
+
+### 4. Ví dụ Format Đúng và Sai
+
+**✅ ĐÚNG:**
+```json
+{
+  "fullName": "Nguyễn Văn A",
+  "phone": "0912345678",
+  "address": "123 Đường Nguyễn Văn Linh",
+  "ward": "Phường 1",
+  "district": "Quận 1",
+  "city": "Hồ Chí Minh"
+}
+```
+
+**✅ ĐÚNG (có thể có khoảng trắng thừa, backend sẽ tự normalize):**
+```json
+{
+  "fullName": "  Nguyễn  Văn  A  ",
+  "phone": "+84 912 345 678",
+  "address": "123, Đường Nguyễn Văn Linh, ",
+  "ward": "Phường 1",
+  "district": "Quận 1",
+  "city": "TP. Hồ Chí Minh"
+}
+```
+
+**❌ SAI (quá ngắn):**
+```json
+{
+  "fullName": "A",  // Quá ngắn (< 2 ký tự)
+  "phone": "123",   // Quá ngắn (< 10 số)
+  "address": "123"  // Quá ngắn (< 5 ký tự)
+}
+```
+
+### 5. Xử lý địa chỉ từ Geolocation (Google Maps/Places API)
+
+Khi lấy địa chỉ từ geolocation, cần xử lý cẩn thận:
+
+```kotlin
+// Ví dụ với Google Places API
+fun parseAddressFromGeocoder(geocoderResult: GeocoderResult): ShippingAddress {
+    // Lấy địa chỉ chi tiết (số nhà + tên đường)
+    val streetAddress = geocoderResult.getAddressLine(0) ?: ""
+    
+    // Lấy thông tin địa chỉ chi tiết
+    var ward: String? = null
+    var district: String? = null
+    var city: String? = null
+    
+    // Parse từ address components
+    for (component in geocoderResult.addressComponents) {
+        when {
+            component.types.contains("ward") || 
+            component.types.contains("sublocality_level_1") -> {
+                ward = component.longName
+            }
+            component.types.contains("administrative_area_level_2") -> {
+                district = component.longName
+            }
+            component.types.contains("administrative_area_level_1") || 
+            component.types.contains("locality") -> {
+                city = component.longName
+            }
+        }
+    }
+    
+    return ShippingAddress(
+        fullName = userFullName.trim(),
+        phone = normalizePhone(userPhone),
+        address = streetAddress.trim(),
+        ward = ward?.trim(),
+        district = district?.trim(),
+        city = city?.trim()
+    )
+}
+```
+
+**Lưu ý quan trọng:**
+- Backend sẽ tự động normalize địa chỉ (loại bỏ khoảng trắng thừa, dấu phẩy không cần thiết)
+- Backend sẽ tự động normalize phone number (loại bỏ ký tự đặc biệt, chuyển 84xxx thành 0xxx)
+- Backend sẽ tự động loại bỏ tiền tố "Phường", "Quận", "Tỉnh", "Thành phố" nếu có
+- Nếu địa chỉ không hợp lệ, API sẽ trả về danh sách lỗi cụ thể
+
+### 6. Ưu tiên sử dụng `addressId`
 
 - ✅ Nhanh hơn (không cần gửi lại địa chỉ)
 - ✅ Đảm bảo địa chỉ đã được validate
 - ✅ Người dùng có thể quản lý địa chỉ dễ dàng
 
-### 5. Khi nào dùng `shippingAddress` object?
+### 7. Khi nào dùng `shippingAddress` object?
 
 - Khi người dùng nhập địa chỉ mới lần đầu
 - Khi sử dụng định vị (geolocation) để lấy địa chỉ
@@ -344,4 +456,5 @@ Nếu gặp vấn đề, vui lòng kiểm tra:
 1. Request body có đúng format không
 2. Token authentication có hợp lệ không
 3. Log trên server để xem chi tiết lỗi
+
 

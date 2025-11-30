@@ -871,7 +871,190 @@
         }
 
         async function checkout() {
-            alert('Chức năng thanh toán đang được phát triển!');
+            if (!token) {
+                alert('Vui lòng đăng nhập!');
+                showSection('login');
+                return;
+            }
+
+            // Load giỏ hàng để lấy thông tin
+            try {
+                const cartResponse = await fetch(`${API_URL}/cart`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const cartData = await cartResponse.json();
+                
+                if (!cartData.cart || cartData.cart.items.length === 0) {
+                    alert('Giỏ hàng trống!');
+                    return;
+                }
+
+                // Hiển thị modal thanh toán
+                showCheckoutModal(cartData);
+            } catch (error) {
+                alert('Lỗi tải giỏ hàng!');
+            }
+        }
+
+        function showCheckoutModal(cartData) {
+            const html = `
+                <div class="modal" id="checkoutModal" style="display: block;">
+                    <div class="modal-content" style="max-width: 700px;">
+                        <span class="close" onclick="closeModal('checkoutModal')">&times;</span>
+                        <h2>Thanh toán</h2>
+                        <form id="checkoutForm" onsubmit="processCheckout(event)">
+                            <div class="section" style="margin-bottom: 20px;">
+                                <h3>Thông tin giao hàng</h3>
+                                <div class="form-group">
+                                    <label>Họ và tên *</label>
+                                    <input type="text" id="checkoutFullName" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Số điện thoại *</label>
+                                    <input type="text" id="checkoutPhone" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Địa chỉ chi tiết *</label>
+                                    <input type="text" id="checkoutAddress" required>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Phường/Xã</label>
+                                        <input type="text" id="checkoutWard">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Quận/Huyện</label>
+                                        <input type="text" id="checkoutDistrict">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tỉnh/Thành phố *</label>
+                                    <input type="text" id="checkoutCity" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Ghi chú</label>
+                                    <textarea id="checkoutNotes" rows="3" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;"></textarea>
+                                </div>
+                            </div>
+                            
+                            <div class="section" style="margin-bottom: 20px;">
+                                <h3>Phương thức thanh toán</h3>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="radio" name="paymentMethod" value="COD" checked> 
+                                        Thanh toán khi nhận hàng (COD)
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="radio" name="paymentMethod" value="zalopay"> 
+                                        ZaloPay
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="radio" name="paymentMethod" value="momo"> 
+                                        MoMo
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="radio" name="paymentMethod" value="vnpay"> 
+                                        VNPay
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="section" style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                                    <strong>Tổng tiền:</strong>
+                                    <strong>${formatPrice(cartData.total)}</strong>
+                                </div>
+                            </div>
+
+                            <div class="action-buttons" style="margin-top: 20px;">
+                                <button type="submit" class="btn btn-success">Xác nhận thanh toán</button>
+                                <button type="button" class="btn btn-danger" onclick="closeModal('checkoutModal')">Hủy</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', html);
+        }
+
+        async function processCheckout(event) {
+            event.preventDefault();
+            
+            const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
+            const shippingAddress = {
+                fullName: document.getElementById('checkoutFullName').value.trim(),
+                phone: document.getElementById('checkoutPhone').value.trim(),
+                address: document.getElementById('checkoutAddress').value.trim(),
+                ward: document.getElementById('checkoutWard').value.trim() || '',
+                district: document.getElementById('checkoutDistrict').value.trim() || '',
+                city: document.getElementById('checkoutCity').value.trim()
+            };
+            const notes = document.getElementById('checkoutNotes').value.trim();
+
+            // Validate
+            if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
+                alert('Vui lòng điền đầy đủ thông tin địa chỉ giao hàng!');
+                return;
+            }
+
+            try {
+                if (paymentMethod === 'COD') {
+                    // Tạo đơn hàng COD trực tiếp
+                    const response = await fetch(`${API_URL}/orders`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            shippingAddress,
+                            paymentMethod: 'COD',
+                            notes
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (response.ok) {
+                        alert('Đặt hàng thành công!');
+                        closeModal('checkoutModal');
+                        loadCart();
+                        showSection('orders');
+                        loadOrders();
+                    } else {
+                        alert(data.message || 'Lỗi đặt hàng!');
+                    }
+                } else {
+                    // Tạo đơn hàng với payment gateway (ZaloPay, MoMo, VNPay)
+                    const response = await fetch(`${API_URL}/payment/${paymentMethod}/create`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            shippingAddress,
+                            notes
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (response.ok && data.paymentUrl) {
+                        // Redirect đến trang thanh toán
+                        window.location.href = data.paymentUrl;
+                    } else {
+                        alert(data.message || 'Lỗi tạo đơn hàng thanh toán!');
+                    }
+                }
+            } catch (error) {
+                console.error('Checkout error:', error);
+                alert('Lỗi kết nối server!');
+            }
         }
 
         async function loadOrders() {

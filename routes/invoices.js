@@ -6,6 +6,7 @@ const Voucher = require('../models/Voucher');
 const { verifyToken, requireCustomer } = require('../middleware/authMiddleware');
 const zalopayService = require('../services/zalopayService');
 const momoService = require('../services/momoService');
+const vnpayService = require('../services/vnpayService');
 
 // ============================================
 // HELPER FUNCTION: Tạo orderNumber (unique)
@@ -105,36 +106,33 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
         address: address.address,
         ward: address.ward || "",
         district: address.district || "",
-        city: address.city
+        city: address.city || ""
       };
       console.log('✅ Địa chỉ từ database:', finalShippingAddress);
     } 
     // Nếu có shippingAddress object, sử dụng trực tiếp
     else if (shippingAddress) {
       console.log('📍 Sử dụng địa chỉ từ request body');
-      // Validate đầy đủ thông tin
-      if (!shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
-        console.error('❌ Thiếu thông tin địa chỉ:', {
-          hasFullName: !!shippingAddress.fullName,
-          hasPhone: !!shippingAddress.phone,
-          hasAddress: !!shippingAddress.address,
-          hasCity: !!shippingAddress.city
+      
+      // Normalize và validate địa chỉ từ geolocation
+      const addressHelper = require('../utils/addressHelper');
+      const addressValidation = addressHelper.normalizeShippingAddress(shippingAddress);
+      
+      if (!addressValidation || !addressValidation.isValid) {
+        console.error('❌ Địa chỉ không hợp lệ:', {
+          original: shippingAddress,
+          errors: addressValidation?.errors || ['Địa chỉ không hợp lệ']
         });
         return res.status(400).json({
           success: false,
-          message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng! (Cần: fullName, phone, address, city)",
+          message: "Địa chỉ không hợp lệ!",
+          errors: addressValidation?.errors || ['Vui lòng kiểm tra lại thông tin địa chỉ'],
           data: null
         });
       }
-      finalShippingAddress = {
-        fullName: String(shippingAddress.fullName).trim(),
-        phone: String(shippingAddress.phone).trim(),
-        address: String(shippingAddress.address).trim(),
-        ward: shippingAddress.ward ? String(shippingAddress.ward).trim() : "",
-        district: shippingAddress.district ? String(shippingAddress.district).trim() : "",
-        city: String(shippingAddress.city).trim()
-      };
-      console.log('✅ Địa chỉ từ request:', finalShippingAddress);
+      
+      finalShippingAddress = addressValidation.normalized;
+      console.log('✅ Địa chỉ đã được normalize:', finalShippingAddress);
     } 
     // Nếu không có cả hai
     else {
@@ -224,7 +222,7 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
         .populate("applicableProducts", "name category")
         .populate("applicableCategories", "name")
         .populate("applicableUsers", "fullName email");
-
+      
       if (!voucher) {
         return res.status(400).json({
           success: false,
@@ -298,8 +296,8 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
       // Tính toán giảm giá (SAU KHI VALIDATE)
       if (voucher.type === "percentage") {
         voucherDiscount = (subtotal * voucher.value) / 100;
-        if (voucher.maxDiscount && voucherDiscount > voucher.maxDiscount) {
-          voucherDiscount = voucher.maxDiscount;
+      if (voucher.maxDiscount && voucherDiscount > voucher.maxDiscount) {
+        voucherDiscount = voucher.maxDiscount;
         }
       } else {
         voucherDiscount = voucher.value;
@@ -356,7 +354,7 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
     await order.save();
 
     // ============================================
-    // 7. XỬ LÝ THANH TOÁN ONLINE (ZaloPay/MoMo)
+    // 7. XỬ LÝ THANH TOÁN ONLINE (ZaloPay/MoMo/VNPay)
     // ============================================
     if (finalPaymentMethod === "zalopay") {
       // Tạo app_trans_id cho ZaloPay
@@ -474,6 +472,76 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
             payUrl: momoResult.payUrl,
             deeplink: momoResult.deeplink,
             qrCodeUrl: momoResult.qrCodeUrl,
+          }
+        }
+      });
+    }
+
+    if (finalPaymentMethod === "vnpay") {
+      // Tạo vnp_TxnRef cho VNPay
+      const vnp_TxnRef = vnpayService.generateTxnRef(order._id);
+
+      // Tạo payment URL
+      // Extract IP address (có thể có IPv6 prefix)
+      // Lấy IP từ nhiều nguồn, ưu tiên x-forwarded-for (khi có proxy/ngrok)
+      let clientIp = req.headers["x-forwarded-for"] || req.headers["x-real-ip"] || req.ip || req.connection.remoteAddress;
+      
+      // Nếu có x-forwarded-for, lấy IP đầu tiên (có thể có nhiều IP)
+      if (clientIp && clientIp.includes(",")) {
+        clientIp = clientIp.split(",")[0].trim();
+      }
+      
+      // Nếu không có IP, dùng default
+      if (!clientIp) {
+        clientIp = "192.168.1.1"; // Dùng IP mặc định hợp lệ thay vì localhost
+      }
+      
+      console.log("🌐 Client IP extracted:", {
+        original: req.ip || req.connection.remoteAddress,
+        xForwardedFor: req.headers["x-forwarded-for"],
+        xRealIp: req.headers["x-real-ip"],
+        final: clientIp
+      });
+      
+      const vnpayResult = vnpayService.createPaymentUrl({
+        vnp_Amount: Math.round(order.total * 100), // VNPay yêu cầu số tiền tính bằng xu (x100)
+        vnp_TxnRef: vnp_TxnRef,
+        vnp_OrderInfo: `Thanh toán đơn hàng ${order.orderNumber}`,
+        vnp_IpAddr: clientIp,
+      });
+
+      if (!vnpayResult.success) {
+        // Xóa order nếu không tạo được payment
+        await Order.findByIdAndDelete(order._id);
+        return res.status(400).json({
+          success: false,
+          message: "Không thể tạo đơn hàng thanh toán VNPay!",
+          error: vnpayResult.message,
+          data: null
+        });
+      }
+
+      // Lưu thông tin VNPay vào order
+      order.vnpayTxnRef = vnp_TxnRef;
+      order.paymentStatus = "processing";
+      order.timeline.push({
+        status: "new",
+        message: "Đã tạo yêu cầu thanh toán VNPay",
+        updatedBy: req.user.userId,
+      });
+      await order.save();
+
+      // Trả về thông tin thanh toán VNPay
+      return res.status(201).json({
+        success: true,
+        message: "Tạo đơn hàng thanh toán VNPay thành công!",
+        data: {
+          _id: order._id,
+          invoiceNumber: order.orderNumber,
+          paymentMethod: "vnpay",
+          paymentInfo: {
+            paymentUrl: vnpayResult.paymentUrl,
+            vnp_TxnRef: vnp_TxnRef,
           }
         }
       });
