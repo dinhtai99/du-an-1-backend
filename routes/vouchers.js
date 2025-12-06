@@ -369,9 +369,15 @@ router.post("/check", verifyToken, async (req, res) => {
     }
 
     // Kiểm tra user được áp dụng
+    // Lưu ý: applicableUsers có thể đã được populate (User object) hoặc chưa (ObjectId)
     if (voucher.applicableUsers.length > 0) {
       const isApplicable = voucher.applicableUsers.some(
-        id => id.toString() === req.user.userId.toString()
+        id => {
+          // Nếu đã populate, id là User object → dùng id._id
+          // Nếu chưa populate, id là ObjectId → dùng id trực tiếp
+          const userId = id._id ? id._id.toString() : id.toString();
+          return userId === req.user.userId.toString();
+        }
       );
       if (!isApplicable) {
         return res.status(400).json({ message: "Bạn không được sử dụng voucher này!" });

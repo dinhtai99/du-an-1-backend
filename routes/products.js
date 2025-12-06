@@ -2,7 +2,7 @@
 const express = require("express"); // Framework web server
 const router = express.Router(); // Router để định nghĩa các routes
 const Product = require("../models/Product"); // Model Product từ database
-const { verifyToken } = require("../middleware/authMiddleware"); // Middleware xác thực JWT token
+const { verifyToken, requireAdmin } = require("../middleware/authMiddleware"); // Middleware xác thực JWT token
 
 /**
  * 📦 Lấy danh sách sản phẩm
@@ -201,7 +201,7 @@ router.get("/:id", async (req, res) => {
  * @body {Boolean} isPromotion - Sản phẩm khuyến mãi (optional)
  * @returns {Object} { message, product }
  */
-router.post("/", verifyToken, async (req, res) => {
+router.post("/", verifyToken, requireAdmin, async (req, res) => {
   try {
     // Lấy thông tin từ request body
     const { name, category, importPrice, price, salePrice, stock, minStock, description, images, image, colors, sizes, isFeatured, isPromotion } = req.body;
@@ -288,7 +288,7 @@ router.post("/", verifyToken, async (req, res) => {
  * @body {Number} status - Trạng thái (0=ẩn, 1=hiển thị) (optional)
  * @returns {Object} { message, product }
  */
-router.put("/:id", verifyToken, async (req, res) => {
+router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     // Lấy thông tin từ request body (tất cả đều optional)
     const { name, category, importPrice, price, stock, minStock, description, images, image, status } = req.body;
@@ -377,7 +377,7 @@ router.put("/:id", verifyToken, async (req, res) => {
  * @query {Boolean} hardDelete - Nếu true thì xóa vĩnh viễn, không thì chỉ ẩn (optional)
  * @returns {Object} { message }
  */
-router.delete("/:id", verifyToken, async (req, res) => {
+router.delete("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     // Lấy query parameter hardDelete
     // hardDelete=true: Xóa vĩnh viễn khỏi database
@@ -416,7 +416,7 @@ router.delete("/:id", verifyToken, async (req, res) => {
  * @middleware verifyToken - Phải đăng nhập
  * @returns {Array} Danh sách sản phẩm tồn kho thấp
  */
-router.get("/low-stock/all", verifyToken, async (req, res) => {
+router.get("/low-stock/all", verifyToken, requireAdmin, async (req, res) => {
   try {
     // Tìm sản phẩm có tồn kho thấp
     // $expr: Sử dụng aggregation expression
@@ -444,7 +444,7 @@ router.get("/low-stock/all", verifyToken, async (req, res) => {
  * @middleware verifyToken - Phải đăng nhập
  * @returns {Object} { message, data, total }
  */
-router.get("/export/excel", verifyToken, async (req, res) => {
+router.get("/export/excel", verifyToken, requireAdmin, async (req, res) => {
   try {
     // Lấy tất cả sản phẩm đang hoạt động (status = 1)
     // populate("category"): Lấy thông tin danh mục (chỉ name)

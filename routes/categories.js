@@ -3,7 +3,7 @@ const express = require("express"); // Framework web server
 const router = express.Router(); // Router để định nghĩa các routes
 const Category = require("../models/Category"); // Model Category từ database
 const Product = require("../models/Product"); // Model Product từ database
-const { verifyToken } = require("../middleware/authMiddleware"); // Middleware xác thực JWT token
+const { verifyToken, requireAdmin } = require("../middleware/authMiddleware"); // Middleware xác thực JWT token
 
 /**
  * 🗂️ Lấy danh sách loại sản phẩm
@@ -110,7 +110,7 @@ router.get("/:id", async (req, res) => {
  * @body {String} description - Mô tả (optional)
  * @returns {Object} { message, category }
  */
-router.post("/", verifyToken, async (req, res) => {
+router.post("/", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { name, description } = req.body;
 
@@ -148,7 +148,7 @@ router.post("/", verifyToken, async (req, res) => {
  * @body {Number} status - Trạng thái (0=ẩn, 1=hiển thị) (optional)
  * @returns {Object} { message, category }
  */
-router.put("/:id", verifyToken, async (req, res) => {
+router.put("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { name, description, status } = req.body;
     const category = await Category.findById(req.params.id);
@@ -184,7 +184,7 @@ router.put("/:id", verifyToken, async (req, res) => {
  * @param {String} id - ID của loại sản phẩm
  * @returns {Object} { message }
  */
-router.delete("/:id", verifyToken, async (req, res) => {
+router.delete("/:id", verifyToken, requireAdmin, async (req, res) => {
   try {
     const categoryId = req.params.id;
 

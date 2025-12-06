@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Shop THB</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -561,9 +563,55 @@
         /* Statistics */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
+        }
+        
+        /* Đảm bảo grid items không tràn */
+        .stats-grid > * {
+            min-width: 0;
+            overflow: hidden;
+        }
+        
+        /* Chart containers */
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            position: relative;
+            height: 400px;
+        }
+        
+        .chart-container h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .chart-wrapper {
+            position: relative;
+            height: 350px;
+        }
+        
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
+            .chart-container {
+                height: 300px;
+            }
+            .chart-wrapper {
+                height: 250px;
+            }
         }
 
         .stat-card {
@@ -573,6 +621,9 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             border: 1px solid #e2e8f0;
             transition: all 0.3s;
+            min-width: 0; /* Cho phép shrink */
+            overflow: hidden; /* Tránh tràn */
+            word-wrap: break-word; /* Xuống dòng khi cần */
         }
 
         .stat-card:hover {
@@ -601,9 +652,25 @@
         }
 
         .stat-card .value {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 700;
             color: #1e293b;
+            word-break: break-word;
+            overflow-wrap: break-word;
+            line-height: 1.2;
+            max-width: 100%;
+        }
+        
+        /* Responsive cho số nhỏ hơn */
+        @media (max-width: 768px) {
+            .stat-card .value {
+                font-size: 24px;
+            }
+        }
+        
+        /* Cho số rất dài */
+        .stat-card .value[style*="color"] {
+            font-size: clamp(18px, 4vw, 28px);
         }
 
         /* Hidden */
@@ -615,6 +682,52 @@
             text-align: center;
             padding: 40px;
             color: #999;
+        }
+        
+        /* Date picker improvements */
+        input[type="date"] {
+            position: relative;
+        }
+        
+        input[type="date"]::-webkit-calendar-picker-indicator {
+            position: absolute;
+            right: 10px;
+            cursor: pointer;
+            opacity: 0.6;
+            width: 20px;
+            height: 20px;
+        }
+        
+        input[type="date"]::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+        }
+        
+        input[type="date"]:focus {
+            outline: 2px solid #667eea;
+            outline-offset: 2px;
+            border-color: #667eea;
+        }
+        
+        /* Custom date input wrapper */
+        .date-input-wrapper {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+        
+        .date-input-wrapper input[type="date"] {
+            width: 100%;
+        }
+        
+        .date-input-wrapper::after {
+            content: '📅';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            pointer-events: none;
+            color: #667eea;
+            font-size: 18px;
         }
     </style>
 </head>
@@ -787,6 +900,8 @@
                                 <option value="shipping">Đang giao</option>
                                 <option value="completed">Hoàn thành</option>
                                 <option value="cancelled">Đã hủy</option>
+                                <option value="returning">Đang hoàn hàng</option>
+                                <option value="exchanging">Đang đổi hàng</option>
                             </select>
                         </div>
                     </div>
@@ -1224,7 +1339,48 @@
 
         // Check if already logged in
         if (currentToken) {
-            showAdminScreen();
+            checkAuth();
+        }
+
+        // Verify token and role when page loads
+        async function checkAuth() {
+            if (!currentToken) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${currentToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    // Kiểm tra role phải là admin
+                    if (data.role === 'admin') {
+                        showAdminScreen();
+                    } else {
+                        // Nếu không phải admin, xóa token và yêu cầu đăng nhập lại
+                        console.error('User is not admin!');
+                        localStorage.removeItem('adminToken');
+                        currentToken = null;
+                        document.getElementById('loginError').textContent = 'Bạn không có quyền truy cập trang admin!';
+                    }
+                } else {
+                    // Token không hợp lệ hoặc đã hết hạn
+                    if (response.status === 401 || response.status === 403) {
+                        localStorage.removeItem('adminToken');
+                        currentToken = null;
+                        document.getElementById('loginError').textContent = 'Phiên đăng nhập đã hết hạn! Vui lòng đăng nhập lại.';
+                    }
+                }
+            } catch (error) {
+                console.error('Auth check error:', error);
+                // Nếu lỗi kết nối, vẫn cho phép thử đăng nhập lại
+                localStorage.removeItem('adminToken');
+                currentToken = null;
+            }
         }
 
         // Login
@@ -1233,6 +1389,7 @@
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
             const errorDiv = document.getElementById('loginError');
+            errorDiv.textContent = ''; // Clear previous errors
 
             try {
                 const response = await fetch(`${API_BASE}/auth/login`, {
@@ -1243,7 +1400,7 @@
 
                 const data = await response.json();
 
-                if (response.ok && data.user.role === 'admin') {
+                if (response.ok && data.user && data.user.role === 'admin') {
                     localStorage.setItem('adminToken', data.token);
                     currentToken = data.token;
                     showAdminScreen();
@@ -1251,6 +1408,7 @@
                     errorDiv.textContent = data.message || 'Email hoặc mật khẩu không đúng!';
                 }
             } catch (error) {
+                console.error('Login error:', error);
                 errorDiv.textContent = 'Lỗi kết nối server!';
             }
         });
@@ -1258,6 +1416,7 @@
         function showAdminScreen() {
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('adminScreen').classList.add('active');
+            document.getElementById('loginError').textContent = ''; // Clear any errors
             loadDashboard();
         }
 
@@ -1266,6 +1425,7 @@
             currentToken = null;
             document.getElementById('loginScreen').style.display = 'flex';
             document.getElementById('adminScreen').classList.remove('active');
+            document.getElementById('loginError').textContent = '';
         }
 
         function getAuthHeaders() {
@@ -1273,11 +1433,25 @@
                 // Nếu không có token, yêu cầu đăng nhập lại
                 alert('Phiên đăng nhập đã hết hạn! Vui lòng đăng nhập lại.');
                 logout();
+                throw new Error('No token available');
             }
             return {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${currentToken || ''}`
+                'Authorization': `Bearer ${currentToken}`
             };
+        }
+
+        // Helper function to handle API errors (401/403)
+        function handleApiError(response) {
+            if (response.status === 401 || response.status === 403) {
+                // Token không hợp lệ hoặc không có quyền
+                localStorage.removeItem('adminToken');
+                currentToken = null;
+                alert('Phiên đăng nhập đã hết hạn hoặc bạn không có quyền! Vui lòng đăng nhập lại.');
+                logout();
+                return true; // Indicates error was handled
+            }
+            return false; // Error not handled
         }
 
         // Copy text to clipboard
@@ -1329,6 +1503,12 @@
                 const response = await fetch(`${API_BASE}/users?role=customer&limit=1000`, {
                     headers: getAuthHeaders()
                 });
+                
+                // Handle authentication errors
+                if (handleApiError(response)) {
+                    return;
+                }
+                
                 const data = await response.json();
                 
                 if (response.ok && data.users) {
@@ -1340,8 +1520,11 @@
                 }
             } catch (error) {
                 console.error('Error loading customers:', error);
-                document.getElementById('customerSelectorList').innerHTML = 
-                    '<div style="text-align: center; padding: 40px; color: #e74c3c;">Lỗi kết nối server!</div>';
+                // Don't show error if it's a logout (from handleApiError)
+                if (currentToken) {
+                    document.getElementById('customerSelectorList').innerHTML = 
+                        '<div style="text-align: center; padding: 40px; color: #e74c3c;">Lỗi kết nối server!</div>';
+                }
             }
         }
 
@@ -1877,6 +2060,12 @@
                 const response = await fetch(`${API_BASE}/orders?${params}`, {
                     headers: getAuthHeaders()
                 });
+                
+                // Handle authentication errors
+                if (handleApiError(response)) {
+                    return;
+                }
+                
                 const data = await response.json();
 
                 if (response.ok) {
@@ -1888,6 +2077,10 @@
                 }
             } catch (error) {
                 console.error('Error loading orders:', error);
+                // Don't show error if it's a logout (from handleApiError)
+                if (currentToken && error.message !== 'No token available') {
+                    alert('Lỗi tải danh sách đơn hàng!');
+                }
             }
         }
 
@@ -1931,7 +2124,9 @@
                 'processing': 'Đang xử lý',
                 'shipping': 'Đang giao',
                 'completed': 'Hoàn thành',
-                'cancelled': 'Đã hủy'
+                'cancelled': 'Đã hủy',
+                'returning': 'Đang hoàn hàng',
+                'exchanging': 'Đang đổi hàng'
             };
             return statusMap[status] || status;
         }
@@ -1993,6 +2188,8 @@
                             <option value="shipping" ${currentStatus === 'shipping' ? 'selected' : ''}>Đang giao</option>
                             <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>Hoàn thành</option>
                             <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>Đã hủy</option>
+                            <option value="returning" ${currentStatus === 'returning' ? 'selected' : ''}>Đang hoàn hàng</option>
+                            <option value="exchanging" ${currentStatus === 'exchanging' ? 'selected' : ''}>Đang đổi hàng</option>
                         </select>
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
@@ -2061,6 +2258,12 @@
                 const response = await fetch(`${API_BASE}/products?${params}`, {
                     headers: getAuthHeaders()
                 });
+                
+                // Handle authentication errors
+                if (handleApiError(response)) {
+                    return;
+                }
+                
                 const data = await response.json();
 
                 if (response.ok) {
@@ -2072,6 +2275,10 @@
                 }
             } catch (error) {
                 console.error('Error loading products:', error);
+                // Don't show error if it's a logout (from handleApiError)
+                if (currentToken && error.message !== 'No token available') {
+                    alert('Lỗi tải danh sách sản phẩm!');
+                }
             }
         }
 
@@ -2439,38 +2646,36 @@
         // Load Statistics
         async function loadStatistics() {
             try {
-                // Lấy filter từ UI
-                const filterType = document.getElementById('statFilterType')?.value || 'all';
-                const filterDate = document.getElementById('statFilterDate')?.value || '';
+                // Clear phần chi tiết trước khi load lại
+                const detailSection = document.getElementById('statDetailSection');
+                if (detailSection) {
+                    detailSection.innerHTML = '';
+                }
+                
+                // Lấy filter từ UI - chỉ dùng date range
                 const filterStartDate = document.getElementById('statFilterStartDate')?.value || '';
                 const filterEndDate = document.getElementById('statFilterEndDate')?.value || '';
-                const filterMonth = document.getElementById('statFilterMonth')?.value || '';
-                const filterYear = document.getElementById('statFilterYear')?.value || '';
+                
+                // Lưu vào localStorage
+                if (filterStartDate) localStorage.setItem('statFilterStartDate', filterStartDate);
+                if (filterEndDate) localStorage.setItem('statFilterEndDate', filterEndDate);
                 
                 // Xây dựng query params
                 let url = `${API_BASE}/statistics/overview`;
                 const params = new URLSearchParams();
                 
-                if (filterType === 'date' && filterDate) {
-                    // Filter theo ngày cụ thể
-                    params.append('startDate', filterDate);
-                    params.append('endDate', filterDate);
-                } else if (filterType === 'daterange' && filterStartDate && filterEndDate) {
+                if (filterStartDate && filterEndDate) {
                     // Filter theo khoảng thời gian (từ ngày đến ngày)
                     params.append('startDate', filterStartDate);
                     params.append('endDate', filterEndDate);
-                } else if (filterType === 'month' && filterMonth && filterYear) {
-                    // Filter theo tháng/năm
-                    const startDate = new Date(parseInt(filterYear), parseInt(filterMonth) - 1, 1);
-                    const endDate = new Date(parseInt(filterYear), parseInt(filterMonth), 0, 23, 59, 59, 999);
-                    params.append('startDate', startDate.toISOString().split('T')[0]);
-                    params.append('endDate', endDate.toISOString().split('T')[0]);
-                } else if (filterType === 'year' && filterYear) {
-                    // Filter theo năm
-                    const startDate = new Date(parseInt(filterYear), 0, 1);
-                    const endDate = new Date(parseInt(filterYear), 11, 31, 23, 59, 59, 999);
-                    params.append('startDate', startDate.toISOString().split('T')[0]);
-                    params.append('endDate', endDate.toISOString().split('T')[0]);
+                } else if (filterStartDate) {
+                    // Chỉ có startDate - từ ngày đó đến hôm nay
+                    params.append('startDate', filterStartDate);
+                    const today = new Date().toISOString().split('T')[0];
+                    params.append('endDate', today);
+                } else if (filterEndDate) {
+                    // Chỉ có endDate - từ đầu đến ngày đó
+                    params.append('endDate', filterEndDate);
                 }
                 
                 if (params.toString()) {
@@ -2506,67 +2711,53 @@
                         { value: '12', label: 'Tháng 12' }
                     ];
                     
+                    // Lấy giá trị date từ localStorage hoặc để trống
+                    const savedStartDate = localStorage.getItem('statFilterStartDate') || '';
+                    const savedEndDate = localStorage.getItem('statFilterEndDate') || '';
+                    
                     let filterHtml = `
                         <div style="background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
                             <h3 style="margin-bottom: 15px; color: #333;">🔍 Lọc thống kê</h3>
                             <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: end;">
-                                <div style="min-width: 150px;">
-                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Loại lọc:</label>
-                                    <select id="statFilterType" onchange="updateStatFilterUI()" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
-                                        <option value="all" ${filterType === 'all' ? 'selected' : ''}>Tất cả</option>
-                                        <option value="date" ${filterType === 'date' ? 'selected' : ''}>Theo ngày</option>
-                                        <option value="daterange" ${filterType === 'daterange' ? 'selected' : ''}>Từ ngày đến ngày</option>
-                                        <option value="month" ${filterType === 'month' ? 'selected' : ''}>Theo tháng/năm</option>
-                                        <option value="year" ${filterType === 'year' ? 'selected' : ''}>Theo năm</option>
-                                    </select>
-                                </div>
-                                <div id="statFilterDateContainer" style="display: ${filterType === 'date' ? 'block' : 'none'}; min-width: 180px;">
-                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Chọn ngày:</label>
-                                    <input type="date" id="statFilterDate" value="${filterDate}" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
-                                </div>
-                                <div id="statFilterDateRangeContainer" style="display: ${filterType === 'daterange' ? 'block' : 'none'};">
-                                    <div style="display: flex; gap: 10px;">
-                                        <div style="min-width: 180px;">
-                                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Từ ngày:</label>
-                                            <input type="date" id="statFilterStartDate" value="${filterStartDate}" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
-                                        </div>
-                                        <div style="min-width: 180px;">
-                                            <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Đến ngày:</label>
-                                            <input type="date" id="statFilterEndDate" value="${filterEndDate}" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
-                                        </div>
+                                <div style="min-width: 200px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">📅 Từ ngày:</label>
+                                    <div style="position: relative;">
+                                        <input type="date" id="statFilterStartDate" value="${savedStartDate}" style="padding: 10px 40px 10px 10px; border: 2px solid #667eea; border-radius: 5px; width: 100%; font-size: 14px; cursor: pointer; background: white; appearance: none; -webkit-appearance: none;" onclick="if(this.showPicker) this.showPicker(); else this.focus();" onchange="loadStatistics()">
+                                        <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #667eea; font-size: 20px;">📅</span>
                                     </div>
                                 </div>
-                                <div id="statFilterMonthContainer" style="display: ${filterType === 'month' ? 'block' : 'none'}; min-width: 150px;">
-                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Chọn tháng:</label>
-                                    <select id="statFilterMonth" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
-                                        ${months.map(m => `<option value="${m.value}" ${filterMonth === m.value ? 'selected' : ''}>${m.label}</option>`).join('')}
-                                    </select>
-                                </div>
-                                <div id="statFilterYearContainer" style="display: ${filterType === 'year' || filterType === 'month' ? 'block' : 'none'}; min-width: 120px;">
-                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">Chọn năm:</label>
-                                    <select id="statFilterYear" style="padding: 10px; border: 1px solid #ddd; border-radius: 5px; width: 100%; font-size: 14px;">
-                                        ${years.map(y => `<option value="${y}" ${filterYear === y.toString() ? 'selected' : ''}>${y}</option>`).join('')}
-                                    </select>
+                                <div style="min-width: 200px;">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">📅 Đến ngày:</label>
+                                    <div style="position: relative;">
+                                        <input type="date" id="statFilterEndDate" value="${savedEndDate}" style="padding: 10px 40px 10px 10px; border: 2px solid #667eea; border-radius: 5px; width: 100%; font-size: 14px; cursor: pointer; background: white; appearance: none; -webkit-appearance: none;" onclick="if(this.showPicker) this.showPicker(); else this.focus();" onchange="loadStatistics()">
+                                        <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #667eea; font-size: 20px;">📅</span>
+                                    </div>
                                 </div>
                                 <div>
-                                    <button onclick="loadStatistics()" style="padding: 10px 20px; background: #667eea; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap;">Áp dụng</button>
+                                    <button onclick="clearDateFilter()" style="padding: 10px 20px; background: #94a3b8; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; font-weight: 600; white-space: nowrap;">Xóa bộ lọc</button>
                                 </div>
                             </div>
+                            <div style="font-size: 12px; color: #94a3b8; margin-top: 10px;">💡 Để trống cả 2 ngày để xem tất cả thống kê</div>
                         </div>
                     `;
                     
                     // Lấy các thống kê chi tiết nếu có filter
                     let detailedStatsHtml = '';
+                    let statusStats = {};
+                    let topProducts = [];
+                    let paymentStats = {};
+                    let dailyData = [];
+                    let ordersData = { orders: [] };
+                    
                     if (params.toString()) {
                         try {
                             // Lấy danh sách đơn hàng
                             const ordersResponse = await fetch(`${API_BASE}/orders?${params.toString()}&limit=100`, {
                                 headers: getAuthHeaders()
                             });
-                            const ordersData = await ordersResponse.json();
+                            ordersData = await ordersResponse.json();
                             
                             // Thống kê theo trạng thái
-                            let statusStats = {};
                             if (ordersResponse.ok && ordersData.orders) {
                                 ordersData.orders.forEach(order => {
                                     const status = order.status || 'unknown';
@@ -2584,67 +2775,145 @@
                             const topProductsResponse = await fetch(`${API_BASE}/statistics/top-products/quantity?${params.toString()}&limit=5`, {
                                 headers: getAuthHeaders()
                             });
-                            const topProducts = topProductsResponse.ok ? await topProductsResponse.json() : [];
+                            topProducts = topProductsResponse.ok ? await topProductsResponse.json() : [];
                             
                             // Lấy thống kê phương thức thanh toán
                             const paymentResponse = await fetch(`${API_BASE}/statistics/payment-methods?${params.toString()}`, {
                                 headers: getAuthHeaders()
                             });
-                            const paymentStats = paymentResponse.ok ? await paymentResponse.json() : {};
+                            paymentStats = paymentResponse.ok ? await paymentResponse.json() : {};
+                            
+                            // Lấy vốn đầu tư theo sản phẩm
+                            let capitalByProduct = [];
+                            try {
+                                const capitalResponse = await fetch(`${API_BASE}/statistics/capital-by-product?${params.toString()}&limit=20`, {
+                                    headers: getAuthHeaders()
+                                });
+                                capitalByProduct = capitalResponse.ok ? await capitalResponse.json() : [];
+                            } catch (e) {
+                                console.error('Error loading capital by product:', e);
+                            }
                             
                             // Lấy doanh thu theo ngày (nếu có filter date range)
-                            let dailyRevenueHtml = '';
-                            if (filterType === 'daterange' && filterStartDate && filterEndDate) {
+                            if (filterStartDate && filterEndDate) {
                                 try {
                                     const dailyResponse = await fetch(`${API_BASE}/statistics/revenue/daily?${params.toString()}`, {
                                         headers: getAuthHeaders()
                                     });
-                                    const dailyData = dailyResponse.ok ? await dailyResponse.json() : [];
-                                    if (dailyData.length > 0) {
-                                        const maxRevenue = Math.max(...dailyData.map(d => d.revenue));
-                                        dailyRevenueHtml = `
-                                            <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                                <h3 style="margin-bottom: 15px; color: #333;">📈 Doanh thu theo ngày</h3>
-                                                <div style="display: grid; gap: 10px;">
-                                                    ${dailyData.map(day => {
-                                                        const percentage = maxRevenue > 0 ? (day.revenue / maxRevenue * 100) : 0;
-                                                        return `
-                                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                                <div style="min-width: 100px; font-size: 12px; color: #666;">${new Date(day.date).toLocaleDateString('vi-VN')}</div>
-                                                                <div style="flex: 1; background: #e9ecef; border-radius: 5px; height: 30px; position: relative; overflow: hidden;">
-                                                                    <div style="background: linear-gradient(90deg, #667eea 0%, #764ba2 100%); height: 100%; width: ${percentage}%; display: flex; align-items: center; justify-content: flex-end; padding-right: 10px; color: white; font-weight: 600; font-size: 12px;">
-                                                                        ${day.revenue > 0 ? day.revenue.toLocaleString('vi-VN') + ' VNĐ' : ''}
-                                                                    </div>
-                                                                </div>
-                                                                <div style="min-width: 120px; text-align: right; font-weight: 600; color: #28a745;">${day.revenue.toLocaleString('vi-VN')} VNĐ</div>
-                                                                <div style="min-width: 60px; text-align: center; color: #666; font-size: 12px;">${day.count} đơn</div>
-                                                            </div>
-                                                        `;
-                                                    }).join('')}
-                                                </div>
-                                            </div>
-                                        `;
-                                    }
+                                    dailyData = dailyResponse.ok ? await dailyResponse.json() : [];
                                 } catch (e) {
                                     console.error('Error loading daily revenue:', e);
                                 }
                             }
                             
-                            // Tạo HTML cho thống kê chi tiết
+                            // Tạo HTML cho thống kê chi tiết với biểu đồ
                             detailedStatsHtml = `
-                                <!-- Thống kê theo trạng thái -->
+                                <div class="chart-grid">
+                                    <!-- Biểu đồ trạng thái đơn hàng -->
+                                    ${Object.keys(statusStats).length > 0 ? `
+                                        <div class="chart-container">
+                                            <h3>📊 Phân bố trạng thái đơn hàng</h3>
+                                            <div class="chart-wrapper">
+                                                <canvas id="statusChart"></canvas>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                    
+                                    <!-- Biểu đồ phương thức thanh toán -->
+                                    ${Object.keys(paymentStats).filter(m => paymentStats[m].count > 0).length > 0 ? `
+                                        <div class="chart-container">
+                                            <h3>💳 Phương thức thanh toán</h3>
+                                            <div class="chart-wrapper">
+                                                <canvas id="paymentChart"></canvas>
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                
+                                <!-- Biểu đồ doanh thu theo ngày -->
+                                ${dailyData.length > 0 ? `
+                                    <div class="chart-container">
+                                        <h3>📈 Doanh thu theo ngày</h3>
+                                        <div class="chart-wrapper">
+                                            <canvas id="revenueChart"></canvas>
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                
+                                <!-- Biểu đồ top sản phẩm -->
+                                ${topProducts.length > 0 ? `
+                                    <div class="chart-container">
+                                        <h3>🏆 Top 5 sản phẩm bán chạy</h3>
+                                        <div class="chart-wrapper">
+                                            <canvas id="topProductsChart"></canvas>
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                
+                                <!-- Vốn đầu tư theo sản phẩm -->
+                                ${capitalByProduct.length > 0 ? `
+                                    <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                        <h3 style="margin-bottom: 15px; color: #333;">💰 Vốn đầu tư theo sản phẩm</h3>
+                                        <div style="overflow-x: auto;">
+                                            <table style="width: 100%; border-collapse: collapse;">
+                                                <thead>
+                                                    <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">STT</th>
+                                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">Tên sản phẩm</th>
+                                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">Danh mục</th>
+                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #495057;">Giá nhập</th>
+                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #495057;">Số lượng bán</th>
+                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #f59e0b;">Tổng vốn</th>
+                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #28a745;">Doanh thu</th>
+                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #10b981;">Lợi nhuận</th>
+                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #667eea;">Tỷ lệ LN (%)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    ${capitalByProduct.map((item, index) => {
+                                                        const profitColor = item.totalProfit >= 0 ? '#10b981' : '#e74c3c';
+                                                        const marginColor = item.profitMargin >= 0 ? '#10b981' : '#e74c3c';
+                                                        return `
+                                                            <tr style="border-bottom: 1px solid #dee2e6;">
+                                                                <td style="padding: 12px; font-weight: 600; color: #667eea;">${index + 1}</td>
+                                                                <td style="padding: 12px; font-weight: 500;">${item.product?.name || 'N/A'}</td>
+                                                                <td style="padding: 12px; color: #666;">${item.product?.category?.name || 'N/A'}</td>
+                                                                <td style="padding: 12px; text-align: right; color: #f59e0b;">${(item.product?.importPrice || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                                <td style="padding: 12px; text-align: right; font-weight: 600;">${item.totalQuantity || 0}</td>
+                                                                <td style="padding: 12px; text-align: right; font-weight: 600; color: #f59e0b;">${(item.totalCapital || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                                <td style="padding: 12px; text-align: right; font-weight: 600; color: #28a745;">${(item.totalRevenue || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                                <td style="padding: 12px; text-align: right; font-weight: 600; color: ${profitColor};">${(item.totalProfit || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                                <td style="padding: 12px; text-align: right; font-weight: 600; color: ${marginColor};">${item.profitMargin >= 0 ? '+' : ''}${item.profitMargin.toFixed(2)}%</td>
+                                                            </tr>
+                                                        `;
+                                                    }).join('')}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr style="background: #f8f9fa; border-top: 2px solid #dee2e6; font-weight: 700;">
+                                                        <td colspan="5" style="padding: 12px; text-align: right;">TỔNG:</td>
+                                                        <td style="padding: 12px; text-align: right; color: #f59e0b;">
+                                                            ${capitalByProduct.reduce((sum, item) => sum + (item.totalCapital || 0), 0).toLocaleString('vi-VN')} VNĐ
+                                                        </td>
+                                                        <td style="padding: 12px; text-align: right; color: #28a745;">
+                                                            ${capitalByProduct.reduce((sum, item) => sum + (item.totalRevenue || 0), 0).toLocaleString('vi-VN')} VNĐ
+                                                        </td>
+                                                        <td style="padding: 12px; text-align: right; color: #10b981;">
+                                                            ${capitalByProduct.reduce((sum, item) => sum + (item.totalProfit || 0), 0).toLocaleString('vi-VN')} VNĐ
+                                                        </td>
+                                                        <td style="padding: 12px;"></td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    </div>
+                                ` : ''}
+                                
+                                <!-- Bảng thống kê trạng thái (backup) -->
                                 <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                    <h3 style="margin-bottom: 15px; color: #333;">📊 Phân tích theo trạng thái đơn hàng</h3>
+                                    <h3 style="margin-bottom: 15px; color: #333;">📋 Chi tiết theo trạng thái</h3>
                                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                                         ${Object.entries(statusStats).map(([status, stat]) => {
                                             const statusText = getStatusText(status);
-                                            const statusClass = {
-                                                'new': 'status-pending',
-                                                'processing': 'status-processing',
-                                                'shipping': 'status-shipping',
-                                                'completed': 'status-completed',
-                                                'cancelled': 'status-cancelled'
-                                            }[status] || 'status-pending';
                                             return `
                                                 <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
                                                     <div style="font-size: 12px; color: #666; margin-bottom: 5px;">${statusText}</div>
@@ -2655,65 +2924,6 @@
                                         }).join('')}
                                     </div>
                                 </div>
-                                
-                                <!-- Top sản phẩm bán chạy -->
-                                ${topProducts.length > 0 ? `
-                                    <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                        <h3 style="margin-bottom: 15px; color: #333;">🏆 Top 5 sản phẩm bán chạy</h3>
-                                        <div style="overflow-x: auto;">
-                                            <table style="width: 100%; border-collapse: collapse;">
-                                                <thead>
-                                                    <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">STT</th>
-                                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">Tên sản phẩm</th>
-                                                        <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">Danh mục</th>
-                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #495057;">Số lượng bán</th>
-                                                        <th style="padding: 12px; text-align: right; font-weight: 600; color: #495057;">Doanh thu</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    ${topProducts.map((item, index) => `
-                                                        <tr style="border-bottom: 1px solid #dee2e6;">
-                                                            <td style="padding: 12px; font-weight: 600; color: #667eea;">${index + 1}</td>
-                                                            <td style="padding: 12px;">${item.product?.name || 'N/A'}</td>
-                                                            <td style="padding: 12px; color: #666;">${item.product?.category?.name || 'N/A'}</td>
-                                                            <td style="padding: 12px; text-align: right; font-weight: 600;">${item.quantity || 0}</td>
-                                                            <td style="padding: 12px; text-align: right; font-weight: 600; color: #28a745;">${(item.revenue || 0).toLocaleString('vi-VN')} VNĐ</td>
-                                                        </tr>
-                                                    `).join('')}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                ` : ''}
-                                
-                                <!-- Thống kê phương thức thanh toán -->
-                                ${Object.keys(paymentStats).length > 0 ? `
-                                    <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                                        <h3 style="margin-bottom: 15px; color: #333;">💳 Phương thức thanh toán</h3>
-                                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                                            ${Object.entries(paymentStats).filter(([method, stat]) => stat.count > 0).map(([method, stat]) => {
-                                                const methodNames = {
-                                                    'COD': 'Thanh toán khi nhận hàng',
-                                                    'cash': 'Tiền mặt',
-                                                    'card': 'Thẻ',
-                                                    'e-wallet': 'Ví điện tử',
-                                                    'zalopay': 'ZaloPay',
-                                                    'momo': 'MoMo'
-                                                };
-                                                return `
-                                                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
-                                                        <div style="font-size: 12px; color: #666; margin-bottom: 5px;">${methodNames[method] || method}</div>
-                                                        <div style="font-size: 18px; font-weight: 700; color: #333;">${stat.count} đơn</div>
-                                                        <div style="font-size: 14px; color: #28a745; margin-top: 5px;">${stat.revenue.toLocaleString('vi-VN')} VNĐ</div>
-                                                    </div>
-                                                `;
-                                            }).join('')}
-                                        </div>
-                                    </div>
-                                ` : ''}
-                                
-                                ${dailyRevenueHtml}
                                 
                                 <!-- Chi tiết đơn hàng -->
                                 ${ordersData.orders && ordersData.orders.length > 0 ? `
@@ -2787,38 +2997,50 @@
                         <div class="stats-grid">
                             <div class="stat-card clickable" onclick="showStatDetail('orders', '${filterParams}')" title="Click để xem chi tiết">
                                 <h4>Tổng đơn hàng</h4>
-                                <div class="value">${data.totalOrders || 0}</div>
+                                <div class="value" style="word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${data.totalOrders || 0}</div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
                             </div>
                             <div class="stat-card clickable" onclick="showStatDetail('revenue', '${filterParams}')" title="Click để xem chi tiết">
                                 <h4>Tổng doanh thu</h4>
-                                <div class="value">${(data.totalRevenue || 0).toLocaleString('vi-VN')} VNĐ</div>
+                                <div class="value" style="word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${(data.totalRevenue || 0).toLocaleString('vi-VN')} VNĐ</div>
+                                <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
+                            </div>
+                            <div class="stat-card clickable" onclick="showStatDetail('capital', '${filterParams}')" title="Click để xem chi tiết">
+                                <h4>Tổng vốn</h4>
+                                <div class="value" style="color: #f59e0b; word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${(data.totalCapital || 0).toLocaleString('vi-VN')} VNĐ</div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
                             </div>
                             <div class="stat-card clickable" onclick="showStatDetail('profit', '${filterParams}')" title="Click để xem chi tiết">
                                 <h4>Lợi nhuận</h4>
-                                <div class="value">${(data.totalProfit || 0).toLocaleString('vi-VN')} VNĐ</div>
+                                <div class="value" style="color: ${(data.totalProfit || 0) >= 0 ? '#10b981' : '#e74c3c'}; word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${(data.totalProfit || 0).toLocaleString('vi-VN')} VNĐ</div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
                             </div>
                             <div class="stat-card clickable" onclick="showStatDetail('products', '${filterParams}')" title="Click để xem chi tiết">
                                 <h4>Tổng sản phẩm</h4>
-                                <div class="value">${data.totalProducts || 0}</div>
+                                <div class="value" style="word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${data.totalProducts || 0}</div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
                             </div>
                             <div class="stat-card clickable" onclick="showStatDetail('customers', '${filterParams}')" title="Click để xem chi tiết">
                                 <h4>Tổng khách hàng</h4>
-                                <div class="value">${data.totalCustomers || 0}</div>
+                                <div class="value" style="word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${data.totalCustomers || 0}</div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
                             </div>
                             <div class="stat-card clickable" onclick="showStatDetail('lowstock', '${filterParams}')" title="Click để xem chi tiết">
                                 <h4>Sản phẩm tồn kho thấp</h4>
-                                <div class="value">${data.lowStockProducts || 0}</div>
+                                <div class="value" style="word-break: break-word; overflow-wrap: break-word; max-width: 100%;">${data.lowStockProducts || 0}</div>
                                 <div style="font-size: 11px; color: #94a3b8; margin-top: 8px;">👆 Click để xem chi tiết</div>
                             </div>
                         </div>
                         <div id="statDetailSection"></div>
                         ${detailedStatsHtml}
                     `;
+                    
+                    // Render biểu đồ sau khi HTML được tạo (chỉ khi có filter)
+                    if (params.toString()) {
+                        setTimeout(() => {
+                            renderCharts(statusStats, paymentStats, dailyData, topProducts);
+                        }, 100);
+                    }
                 }
             } catch (error) {
                 console.error('Load statistics error:', error);
@@ -2826,18 +3048,303 @@
             }
         }
         
-        // Update filter UI based on filter type
-        function updateStatFilterUI() {
-            const filterType = document.getElementById('statFilterType')?.value || 'all';
-            const dateContainer = document.getElementById('statFilterDateContainer');
-            const dateRangeContainer = document.getElementById('statFilterDateRangeContainer');
-            const monthContainer = document.getElementById('statFilterMonthContainer');
-            const yearContainer = document.getElementById('statFilterYearContainer');
+        // Render các biểu đồ
+        function renderCharts(statusStats, paymentStats, dailyData, topProducts) {
+            // Hủy các biểu đồ cũ nếu có
+            if (window.statusChartInstance) window.statusChartInstance.destroy();
+            if (window.paymentChartInstance) window.paymentChartInstance.destroy();
+            if (window.revenueChartInstance) window.revenueChartInstance.destroy();
+            if (window.topProductsChartInstance) window.topProductsChartInstance.destroy();
             
-            if (dateContainer) dateContainer.style.display = filterType === 'date' ? 'block' : 'none';
-            if (dateRangeContainer) dateRangeContainer.style.display = filterType === 'daterange' ? 'block' : 'none';
-            if (monthContainer) monthContainer.style.display = filterType === 'month' ? 'block' : 'none';
-            if (yearContainer) yearContainer.style.display = (filterType === 'year' || filterType === 'month') ? 'block' : 'none';
+            // Biểu đồ trạng thái đơn hàng (Doughnut)
+            const statusCtx = document.getElementById('statusChart');
+            if (statusCtx && Object.keys(statusStats).length > 0) {
+                const statusLabels = Object.keys(statusStats).map(status => getStatusText(status));
+                const statusData = Object.values(statusStats).map(stat => stat.count);
+                const statusColors = {
+                    'new': '#f59e0b',
+                    'processing': '#3b82f6',
+                    'shipping': '#8b5cf6',
+                    'completed': '#10b981',
+                    'cancelled': '#ef4444'
+                };
+                const backgroundColors = Object.keys(statusStats).map(status => 
+                    statusColors[status] || '#94a3b8'
+                );
+                
+                window.statusChartInstance = new Chart(statusCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: statusLabels,
+                        datasets: [{
+                            data: statusData,
+                            backgroundColor: backgroundColors,
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    padding: 15,
+                                    font: { size: 12 }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.label || '';
+                                        const value = context.parsed || 0;
+                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        const percentage = ((value / total) * 100).toFixed(1);
+                                        return `${label}: ${value} đơn (${percentage}%)`;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Biểu đồ phương thức thanh toán (Pie)
+            const paymentCtx = document.getElementById('paymentChart');
+            if (paymentCtx && Object.keys(paymentStats).filter(m => paymentStats[m].count > 0).length > 0) {
+                const methodNames = {
+                    'COD': 'Thanh toán khi nhận hàng',
+                    'cash': 'Tiền mặt',
+                    'card': 'Thẻ',
+                    'e-wallet': 'Ví điện tử',
+                    'zalopay': 'ZaloPay',
+                    'momo': 'MoMo'
+                };
+                const paymentEntries = Object.entries(paymentStats).filter(([method, stat]) => stat.count > 0);
+                const paymentLabels = paymentEntries.map(([method]) => methodNames[method] || method);
+                const paymentData = paymentEntries.map(([, stat]) => stat.count);
+                const paymentColors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
+                
+                window.paymentChartInstance = new Chart(paymentCtx, {
+                    type: 'pie',
+                    data: {
+                        labels: paymentLabels,
+                        datasets: [{
+                            data: paymentData,
+                            backgroundColor: paymentColors.slice(0, paymentData.length),
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    padding: 15,
+                                    font: { size: 12 }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const label = context.label || '';
+                                        const value = context.parsed || 0;
+                                        const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                        const percentage = ((value / total) * 100).toFixed(1);
+                                        const revenue = paymentEntries[context.dataIndex][1].revenue;
+                                        return [
+                                            `${label}: ${value} đơn (${percentage}%)`,
+                                            `Doanh thu: ${revenue.toLocaleString('vi-VN')} VNĐ`
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Biểu đồ doanh thu theo ngày (Line)
+            const revenueCtx = document.getElementById('revenueChart');
+            if (revenueCtx && dailyData.length > 0) {
+                const revenueLabels = dailyData.map(d => new Date(d.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }));
+                const revenueData = dailyData.map(d => d.revenue);
+                const orderCountData = dailyData.map(d => d.count);
+                
+                window.revenueChartInstance = new Chart(revenueCtx, {
+                    type: 'line',
+                    data: {
+                        labels: revenueLabels,
+                        datasets: [
+                            {
+                                label: 'Doanh thu (VNĐ)',
+                                data: revenueData,
+                                borderColor: '#667eea',
+                                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                                tension: 0.4,
+                                fill: true,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Số đơn hàng',
+                                data: orderCountData,
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                tension: 0.4,
+                                fill: true,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.datasetIndex === 0) {
+                                            return `Doanh thu: ${context.parsed.y.toLocaleString('vi-VN')} VNĐ`;
+                                        } else {
+                                            return `Số đơn: ${context.parsed.y} đơn`;
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'Doanh thu (VNĐ)'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return (value / 1000000).toFixed(1) + 'M';
+                                    }
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Số đơn hàng'
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Biểu đồ top sản phẩm (Bar)
+            const topProductsCtx = document.getElementById('topProductsChart');
+            if (topProductsCtx && topProducts.length > 0) {
+                const productLabels = topProducts.map(item => item.product?.name || 'N/A').slice(0, 10);
+                const quantityData = topProducts.map(item => item.quantity || 0).slice(0, 10);
+                const revenueData = topProducts.map(item => item.revenue || 0).slice(0, 10);
+                
+                window.topProductsChartInstance = new Chart(topProductsCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: productLabels,
+                        datasets: [
+                            {
+                                label: 'Số lượng bán',
+                                data: quantityData,
+                                backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                                borderColor: '#667eea',
+                                borderWidth: 1,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Doanh thu (VNĐ)',
+                                data: revenueData,
+                                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                                borderColor: '#10b981',
+                                borderWidth: 1,
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.datasetIndex === 0) {
+                                            return `Số lượng: ${context.parsed.y} sản phẩm`;
+                                        } else {
+                                            return `Doanh thu: ${context.parsed.y.toLocaleString('vi-VN')} VNĐ`;
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: {
+                                    display: true,
+                                    text: 'Số lượng bán'
+                                },
+                                beginAtZero: true
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                title: {
+                                    display: true,
+                                    text: 'Doanh thu (VNĐ)'
+                                },
+                                grid: {
+                                    drawOnChartArea: false
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return (value / 1000000).toFixed(1) + 'M';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        
+        // Clear date filter
+        function clearDateFilter() {
+            document.getElementById('statFilterStartDate').value = '';
+            document.getElementById('statFilterEndDate').value = '';
+            localStorage.removeItem('statFilterStartDate');
+            localStorage.removeItem('statFilterEndDate');
+            loadStatistics();
         }
         
         // Hiển thị chi tiết khi click vào stat card
@@ -3031,7 +3538,8 @@
                             headers: getAuthHeaders()
                         });
                         const customersData = customersResponse.ok ? await customersResponse.json() : {};
-                        const customers = customersData.users || [];
+                        // API trả về 'customers' chứ không phải 'users'
+                        const customers = customersData.customers || customersData.users || [];
                         
                         if (customers.length > 0) {
                             html = `
@@ -3117,6 +3625,117 @@
                             `;
                         } else {
                             html = '<div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; text-align: center; color: #28a745;">Tất cả sản phẩm đều đủ tồn kho!</div>';
+                        }
+                        break;
+                        
+                    case 'capital':
+                        // Vốn đầu tư theo sản phẩm
+                        let capitalUrl = `${API_BASE}/statistics/capital-by-product`;
+                        if (filterParams) {
+                            capitalUrl += `?${filterParams}&limit=50`;
+                        } else {
+                            capitalUrl += '?limit=50';
+                        }
+                        
+                        const capitalResponse = await fetch(capitalUrl, {
+                            headers: getAuthHeaders()
+                        });
+                        const capitalData = capitalResponse.ok ? await capitalResponse.json() : [];
+                        
+                        if (capitalData.length > 0) {
+                            const totalCapital = capitalData.reduce((sum, item) => sum + (item.totalCapital || 0), 0);
+                            const totalRevenue = capitalData.reduce((sum, item) => sum + (item.totalRevenue || 0), 0);
+                            const totalProfit = capitalData.reduce((sum, item) => sum + (item.totalProfit || 0), 0);
+                            
+                            html = `
+                                <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                        <h3 style="color: #333; margin: 0;">💰 Vốn đầu tư theo sản phẩm (${capitalData.length} sản phẩm)</h3>
+                                        <button onclick="document.getElementById('statDetailSection').innerHTML = ''" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">Đóng</button>
+                                    </div>
+                                    
+                                    <!-- Tổng hợp -->
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                                        <div style="background: #fff7ed; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Tổng vốn đầu tư</div>
+                                            <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">${totalCapital.toLocaleString('vi-VN')} VNĐ</div>
+                                        </div>
+                                        <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #28a745;">
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Tổng doanh thu</div>
+                                            <div style="font-size: 20px; font-weight: 700; color: #28a745;">${totalRevenue.toLocaleString('vi-VN')} VNĐ</div>
+                                        </div>
+                                        <div style="background: ${totalProfit >= 0 ? '#f0fdf4' : '#fef2f2'}; padding: 15px; border-radius: 8px; border-left: 4px solid ${totalProfit >= 0 ? '#10b981' : '#e74c3c'};">
+                                            <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Tổng lợi nhuận</div>
+                                            <div style="font-size: 20px; font-weight: 700; color: ${totalProfit >= 0 ? '#10b981' : '#e74c3c'};">${totalProfit.toLocaleString('vi-VN')} VNĐ</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="overflow-x: auto;">
+                                        <table style="width: 100%; border-collapse: collapse;">
+                                            <thead>
+                                                <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
+                                                    <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">STT</th>
+                                                    <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">Tên sản phẩm</th>
+                                                    <th style="padding: 12px; text-align: left; font-weight: 600; color: #495057;">Danh mục</th>
+                                                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #495057;">Giá nhập</th>
+                                                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #495057;">Số lượng bán</th>
+                                                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #f59e0b;">Tổng vốn</th>
+                                                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #28a745;">Doanh thu</th>
+                                                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #10b981;">Lợi nhuận</th>
+                                                    <th style="padding: 12px; text-align: right; font-weight: 600; color: #667eea;">Tỷ lệ LN (%)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${capitalData.map((item, index) => {
+                                                    const profitColor = item.totalProfit >= 0 ? '#10b981' : '#e74c3c';
+                                                    const marginColor = item.profitMargin >= 0 ? '#10b981' : '#e74c3c';
+                                                    return `
+                                                        <tr style="border-bottom: 1px solid #dee2e6;">
+                                                            <td style="padding: 12px; font-weight: 600; color: #667eea;">${index + 1}</td>
+                                                            <td style="padding: 12px; font-weight: 500;">${item.product?.name || 'N/A'}</td>
+                                                            <td style="padding: 12px; color: #666;">${item.product?.category?.name || 'N/A'}</td>
+                                                            <td style="padding: 12px; text-align: right; color: #f59e0b;">${(item.product?.importPrice || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                            <td style="padding: 12px; text-align: right; font-weight: 600;">${item.totalQuantity || 0}</td>
+                                                            <td style="padding: 12px; text-align: right; font-weight: 600; color: #f59e0b;">${(item.totalCapital || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                            <td style="padding: 12px; text-align: right; font-weight: 600; color: #28a745;">${(item.totalRevenue || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                            <td style="padding: 12px; text-align: right; font-weight: 600; color: ${profitColor};">${(item.totalProfit || 0).toLocaleString('vi-VN')} VNĐ</td>
+                                                            <td style="padding: 12px; text-align: right; font-weight: 600; color: ${marginColor};">${item.profitMargin >= 0 ? '+' : ''}${item.profitMargin.toFixed(2)}%</td>
+                                                        </tr>
+                                                    `;
+                                                }).join('')}
+                                            </tbody>
+                                            <tfoot>
+                                                <tr style="background: #f8f9fa; border-top: 2px solid #dee2e6; font-weight: 700;">
+                                                    <td colspan="5" style="padding: 12px; text-align: right;">TỔNG:</td>
+                                                    <td style="padding: 12px; text-align: right; color: #f59e0b;">
+                                                        ${totalCapital.toLocaleString('vi-VN')} VNĐ
+                                                    </td>
+                                                    <td style="padding: 12px; text-align: right; color: #28a745;">
+                                                        ${totalRevenue.toLocaleString('vi-VN')} VNĐ
+                                                    </td>
+                                                    <td style="padding: 12px; text-align: right; color: ${totalProfit >= 0 ? '#10b981' : '#e74c3c'};">
+                                                        ${totalProfit.toLocaleString('vi-VN')} VNĐ
+                                                    </td>
+                                                    <td style="padding: 12px;"></td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            html = `
+                                <div style="background: white; padding: 20px; border-radius: 10px; margin-top: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                        <h3 style="color: #333; margin: 0;">💰 Vốn đầu tư theo sản phẩm</h3>
+                                        <button onclick="document.getElementById('statDetailSection').innerHTML = ''" style="padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 5px; cursor: pointer;">Đóng</button>
+                                    </div>
+                                    <div style="text-align: center; padding: 40px; color: #6c757d;">
+                                        <p>Không có dữ liệu vốn đầu tư.</p>
+                                        <p style="margin-top: 10px; font-size: 12px;">Vui lòng áp dụng filter thời gian để xem chi tiết.</p>
+                                    </div>
+                                </div>
+                            `;
                         }
                         break;
                         
@@ -3358,10 +3977,46 @@
                                     <p style="margin: 0; color: #856404;">${order.notes}</p>
                                 </div>
                                 ` : ''}
+
+                                ${order.status === 'returning' ? `
+                                <div style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ff9800;">
+                                    <h3 style="margin: 0 0 15px 0; color: #e65100;">🔄 Yêu cầu hoàn hàng để đổi</h3>
+                                    <p style="margin: 5px 0;"><strong>Lý do:</strong> ${order.returnReason || 'N/A'}</p>
+                                    ${order.returnRequestedAt ? `<p style="margin: 5px 0;"><strong>Thời gian yêu cầu:</strong> ${new Date(order.returnRequestedAt).toLocaleString('vi-VN')}</p>` : ''}
+                                    ${order.returnItems && order.returnItems.length > 0 ? `
+                                        <div style="margin-top: 10px;">
+                                            <strong>Sản phẩm cần hoàn:</strong>
+                                            <ul style="margin: 5px 0; padding-left: 20px;">
+                                                ${order.returnItems.map(item => `<li>${item.product?.name || 'N/A'} - Số lượng: ${item.quantity}${item.reason ? ` (Lý do: ${item.reason})` : ''}</li>`).join('')}
+                                            </ul>
+                                        </div>
+                                    ` : ''}
+                                    ${order.exchangeItems && order.exchangeItems.length > 0 ? `
+                                        <div style="margin-top: 10px;">
+                                            <strong>Sản phẩm muốn đổi:</strong>
+                                            <ul style="margin: 5px 0; padding-left: 20px;">
+                                                ${order.exchangeItems.map(item => `<li>${item.oldProduct?.name || 'N/A'} → ${item.newProduct?.name || 'N/A'} (Số lượng: ${item.quantity})</li>`).join('')}
+                                            </ul>
+                                        </div>
+                                    ` : ''}
+                                    <div style="margin-top: 15px; display: flex; gap: 10px;">
+                                        <button class="btn btn-success" onclick="processReturnOrder('${id}', 'accept')">✅ Chấp nhận</button>
+                                        <button class="btn btn-danger" onclick="processReturnOrder('${id}', 'reject')">❌ Từ chối</button>
+                                    </div>
+                                </div>
+                                ` : ''}
+
+                                ${order.status === 'exchanging' ? `
+                                <div style="margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196f3;">
+                                    <h3 style="margin: 0 0 15px 0; color: #1565c0;">🔄 Đang xử lý đổi hàng</h3>
+                                    ${order.returnProcessedAt ? `<p style="margin: 5px 0;"><strong>Thời gian xử lý:</strong> ${new Date(order.returnProcessedAt).toLocaleString('vi-VN')}</p>` : ''}
+                                    ${order.returnProcessedBy ? `<p style="margin: 5px 0;"><strong>Người xử lý:</strong> ${order.returnProcessedBy?.fullName || 'N/A'}</p>` : ''}
+                                </div>
+                                ` : ''}
                             </div>
                             <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
                                 <button class="btn btn-secondary" onclick="closeOrderDetailModal()">Đóng</button>
-                                ${order.status !== 'completed' && order.status !== 'cancelled' ? 
+                                ${order.status !== 'completed' && order.status !== 'cancelled' && order.status !== 'returning' && order.status !== 'exchanging' ? 
                                     `<button class="btn btn-primary" onclick="closeOrderDetailModal(); updateOrderStatus('${id}')">Cập nhật trạng thái</button>` : ''}
                             </div>
                         </div>
@@ -3387,6 +4042,45 @@
             const modal = document.getElementById('orderDetailModal');
             if (modal) {
                 modal.remove();
+            }
+        }
+
+        async function processReturnOrder(orderId, action) {
+            // action: 'accept' hoặc 'reject'
+            if (!confirm(action === 'accept' 
+                ? 'Bạn có chắc chắn muốn chấp nhận yêu cầu hoàn hàng này?' 
+                : 'Bạn có chắc chắn muốn từ chối yêu cầu hoàn hàng này?')) {
+                return;
+            }
+
+            const note = prompt('Nhập ghi chú (tùy chọn):');
+            if (note === null) return; // User đã hủy
+
+            try {
+                const response = await fetch(`${API_BASE}/orders/${orderId}/return-status`, {
+                    method: 'PUT',
+                    headers: {
+                        ...getAuthHeaders(),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        note: note || ''
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(data.message || 'Xử lý yêu cầu hoàn hàng thành công!');
+                    closeOrderDetailModal();
+                    loadOrders(); // Reload danh sách đơn hàng
+                } else {
+                    alert(data.message || 'Lỗi xử lý yêu cầu hoàn hàng!');
+                }
+            } catch (error) {
+                console.error('Process return order error:', error);
+                alert('Lỗi kết nối server!');
             }
         }
 

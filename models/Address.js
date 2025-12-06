@@ -27,8 +27,8 @@ const addressSchema = new mongoose.Schema({
   // Quận/Huyện - Optional
   district: { type: String },
   
-  // Tỉnh/Thành phố - Bắt buộc
-  city: { type: String, required: true },
+  // Tỉnh/Thành phố - Optional (có thể để trống nếu chưa có thông tin)
+  city: { type: String, default: "" },
   
   // Địa chỉ mặc định - Mặc định false
   // isDefault = true: Địa chỉ này sẽ được chọn mặc định khi checkout

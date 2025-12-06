@@ -22,41 +22,59 @@ router.get("/overview", verifyToken, requireAdmin, async (req, res) => {
       }
     }
 
-    // Tổng số đơn hàng (tất cả trừ cancelled)
+    // Tổng số đơn hàng (tất cả trừ cancelled) - dùng aggregation để tối ưu
     const totalOrders = await Order.countDocuments(allOrdersQuery);
 
-    // Tổng doanh thu (tính từ tất cả đơn hàng trừ cancelled)
-    const allOrders = await Order.find(allOrdersQuery);
-    const totalRevenue = allOrders.reduce((sum, order) => sum + order.total, 0);
-
-    // Tính lợi nhuận (tổng doanh thu - tổng giá nhập) - tính từ tất cả đơn hàng trừ cancelled
-    let totalProfit = 0;
-    for (const order of allOrders) {
-      for (const item of order.items) {
-        const product = await Product.findById(item.product);
-        if (product && product.importPrice) {
-          const cost = product.importPrice * item.quantity;
-          const revenue = item.subtotal;
-          totalProfit += revenue - cost;
+    // Tính tổng doanh thu và lợi nhuận bằng aggregation pipeline (nhanh hơn nhiều)
+    const revenueStats = await Order.aggregate([
+      { $match: allOrdersQuery },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: "$total" },
+          items: { $push: "$items" }
         }
+      }
+    ]);
+
+    const totalRevenue = revenueStats[0]?.totalRevenue || 0;
+    const allItems = revenueStats[0]?.items?.flat() || [];
+
+    // Thu thập tất cả product IDs (loại bỏ duplicate)
+    const productIds = [...new Set(allItems.map(item => item.product?.toString()).filter(Boolean))];
+
+    // Load tất cả products một lần (thay vì N queries)
+    const products = await Product.find({ _id: { $in: productIds } }).select("_id importPrice");
+    const productMap = new Map(products.map(p => [p._id.toString(), p.importPrice || 0]));
+
+    // Tính lợi nhuận và tổng vốn từ map (rất nhanh)
+    let totalProfit = 0;
+    let totalCapital = 0; // Tổng vốn bỏ ra
+    for (const item of allItems) {
+      const productId = item.product?.toString();
+      if (productId && productMap.has(productId)) {
+        const importPrice = productMap.get(productId);
+        const cost = importPrice * item.quantity;
+        const revenue = item.subtotal || 0;
+        totalCapital += cost; // Tổng vốn
+        totalProfit += revenue - cost; // Lợi nhuận
       }
     }
 
-    // Tổng số sản phẩm
-    const totalProducts = await Product.countDocuments({ status: 1 });
-
-    // Tổng số khách hàng
-    const totalCustomers = await User.countDocuments({ role: "customer" });
-
-    // Sản phẩm tồn kho thấp (dưới 5)
-    const lowStockProducts = await Product.countDocuments({
-      stock: { $lt: 5 },
-      status: 1,
-    });
+    // Chạy song song các queries không liên quan (nhanh hơn)
+    const [totalProducts, totalCustomers, lowStockProducts] = await Promise.all([
+      Product.countDocuments({ status: 1 }),
+      User.countDocuments({ role: "customer" }),
+      Product.countDocuments({
+        stock: { $lt: 5 },
+        status: 1,
+      })
+    ]);
 
     res.json({
       totalOrders,
       totalRevenue,
+      totalCapital, // Tổng vốn bỏ ra
       totalProfit,
       totalProducts,
       totalCustomers,
@@ -164,46 +182,51 @@ router.get("/top-products/revenue", verifyToken, requireAdmin, async (req, res) 
   }
 });
 
-// 📊 Doanh thu theo ngày - Admin only
+// 📊 Doanh thu theo ngày - Admin only (tối ưu bằng aggregation)
 router.get("/revenue/daily", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = { status: "completed" };
+    const matchQuery = { status: "completed" };
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
+      matchQuery.createdAt = {};
+      if (startDate) matchQuery.createdAt.$gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
+        matchQuery.createdAt.$lte = end;
       }
     }
 
-    const orders = await Order.find(query);
-    const dailyRevenue = {};
+    // Sử dụng aggregation pipeline thay vì load tất cả orders (nhanh hơn nhiều)
+    const dailyRevenue = await Order.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          revenue: { $sum: "$total" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: "$_id",
+          revenue: 1,
+          count: 1
+        }
+      },
+      { $sort: { date: 1 } }
+    ]);
 
-    orders.forEach((order) => {
-      const date = order.createdAt.toISOString().split("T")[0];
-      if (!dailyRevenue[date]) {
-        dailyRevenue[date] = { date, revenue: 0, count: 0 };
-      }
-      dailyRevenue[date].revenue += order.total;
-      dailyRevenue[date].count += 1;
-    });
-
-    const result = Object.values(dailyRevenue).sort((a, b) => 
-      new Date(a.date) - new Date(b.date)
-    );
-
-    res.json(result);
+    res.json(dailyRevenue);
   } catch (error) {
     console.error("Get daily revenue error:", error);
     res.status(500).json({ message: "Lỗi server!" });
   }
 });
 
-// 📊 Doanh thu theo tháng - Admin only
+// 📊 Doanh thu theo tháng - Admin only (tối ưu bằng aggregation)
 router.get("/revenue/monthly", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { year } = req.query;
@@ -212,23 +235,43 @@ router.get("/revenue/monthly", verifyToken, requireAdmin, async (req, res) => {
     const startDate = new Date(currentYear, 0, 1);
     const endDate = new Date(currentYear, 11, 31, 23, 59, 59, 999);
 
-    const orders = await Order.find({
-      status: "completed",
-      createdAt: { $gte: startDate, $lte: endDate },
-    });
+    // Sử dụng aggregation pipeline (nhanh hơn nhiều)
+    const monthlyRevenue = await Order.aggregate([
+      {
+        $match: {
+          status: "completed",
+          createdAt: { $gte: startDate, $lte: endDate }
+        }
+      },
+      {
+        $group: {
+          _id: { $month: "$createdAt" },
+          revenue: { $sum: "$total" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          month: "$_id",
+          revenue: 1,
+          count: 1
+        }
+      },
+      { $sort: { month: 1 } }
+    ]);
 
-    const monthlyRevenue = {};
-    for (let i = 0; i < 12; i++) {
-      monthlyRevenue[i] = { month: i + 1, revenue: 0, count: 0 };
+    // Đảm bảo có đủ 12 tháng (fill các tháng không có đơn hàng = 0)
+    const result = [];
+    for (let i = 1; i <= 12; i++) {
+      const monthData = monthlyRevenue.find(m => m.month === i);
+      result.push({
+        month: i,
+        revenue: monthData?.revenue || 0,
+        count: monthData?.count || 0
+      });
     }
 
-    orders.forEach((order) => {
-      const month = order.createdAt.getMonth();
-      monthlyRevenue[month].revenue += order.total;
-      monthlyRevenue[month].count += 1;
-    });
-
-    const result = Object.values(monthlyRevenue);
     res.json(result);
   } catch (error) {
     console.error("Get monthly revenue error:", error);
@@ -236,23 +279,31 @@ router.get("/revenue/monthly", verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
-// 📊 Doanh thu theo năm - Admin only
+// 📊 Doanh thu theo năm - Admin only (tối ưu bằng aggregation)
 router.get("/revenue/yearly", verifyToken, requireAdmin, async (req, res) => {
   try {
-    const orders = await Order.find({ status: "completed" });
-    const yearlyRevenue = {};
+    // Sử dụng aggregation pipeline (nhanh hơn nhiều)
+    const yearlyRevenue = await Order.aggregate([
+      { $match: { status: "completed" } },
+      {
+        $group: {
+          _id: { $year: "$createdAt" },
+          revenue: { $sum: "$total" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          year: "$_id",
+          revenue: 1,
+          count: 1
+        }
+      },
+      { $sort: { year: 1 } }
+    ]);
 
-    orders.forEach((order) => {
-      const year = order.createdAt.getFullYear();
-      if (!yearlyRevenue[year]) {
-        yearlyRevenue[year] = { year, revenue: 0, count: 0 };
-      }
-      yearlyRevenue[year].revenue += order.total;
-      yearlyRevenue[year].count += 1;
-    });
-
-    const result = Object.values(yearlyRevenue).sort((a, b) => a.year - b.year);
-    res.json(result);
+    res.json(yearlyRevenue);
   } catch (error) {
     console.error("Get yearly revenue error:", error);
     res.status(500).json({ message: "Lỗi server!" });
@@ -284,24 +335,50 @@ router.get("/low-stock", verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
-// 📊 Thống kê theo phương thức thanh toán - Admin only
+// 📊 Thống kê theo phương thức thanh toán - Admin only (tối ưu bằng aggregation)
 router.get("/payment-methods", verifyToken, requireAdmin, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
 
-    const query = { status: "completed" };
+    const matchQuery = { status: "completed" };
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
+      matchQuery.createdAt = {};
+      if (startDate) matchQuery.createdAt.$gte = new Date(startDate);
       if (endDate) {
         const end = new Date(endDate);
         end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
+        matchQuery.createdAt.$lte = end;
       }
     }
 
-    const orders = await Order.find(query);
-    const paymentStats = {
+    // Sử dụng aggregation pipeline (nhanh hơn nhiều)
+    const paymentStats = await Order.aggregate([
+      { $match: matchQuery },
+      {
+        $group: {
+          _id: {
+            $cond: [
+              { $eq: ["$paymentMethod", "cash"] },
+              "COD",
+              "$paymentMethod"
+            ]
+          },
+          count: { $sum: 1 },
+          revenue: { $sum: "$total" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          method: "$_id",
+          count: 1,
+          revenue: 1
+        }
+      }
+    ]);
+
+    // Format về object như cũ để tương thích với frontend
+    const result = {
       COD: { count: 0, revenue: 0 },
       cash: { count: 0, revenue: 0 },
       card: { count: 0, revenue: 0 },
@@ -310,22 +387,98 @@ router.get("/payment-methods", verifyToken, requireAdmin, async (req, res) => {
       momo: { count: 0, revenue: 0 },
     };
 
-    orders.forEach((order) => {
-      const method = order.paymentMethod;
-      // Gộp cash vào COD nếu có
-      const statKey = method === "cash" ? "COD" : method;
-      if (paymentStats[statKey]) {
-        paymentStats[statKey].count += 1;
-        paymentStats[statKey].revenue += order.total;
-      } else if (paymentStats[method]) {
-        paymentStats[method].count += 1;
-        paymentStats[method].revenue += order.total;
+    paymentStats.forEach(stat => {
+      const method = stat.method;
+      if (result[method]) {
+        result[method].count = stat.count;
+        result[method].revenue = stat.revenue;
       }
     });
 
-    res.json(paymentStats);
+    res.json(result);
   } catch (error) {
     console.error("Get payment methods statistics error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
+  }
+});
+
+// 📊 Thống kê vốn đầu tư theo sản phẩm - Admin only
+router.get("/capital-by-product", verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const { startDate, endDate, limit = 20 } = req.query;
+
+    // Query cho tất cả đơn hàng (trừ cancelled)
+    const allOrdersQuery = { status: { $ne: "cancelled" } };
+    if (startDate || endDate) {
+      allOrdersQuery.createdAt = {};
+      if (startDate) allOrdersQuery.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        allOrdersQuery.createdAt.$lte = end;
+      }
+    }
+
+    // Sử dụng aggregation để tính vốn đầu tư theo sản phẩm
+    const capitalByProduct = await Order.aggregate([
+      { $match: allOrdersQuery },
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.product",
+          totalQuantity: { $sum: "$items.quantity" },
+          totalRevenue: { $sum: "$items.subtotal" },
+          orderCount: { $sum: 1 }
+        }
+      },
+      { $sort: { totalQuantity: -1 } },
+      { $limit: parseInt(limit) }
+    ]);
+
+    // Load thông tin sản phẩm và tính vốn
+    const productIds = capitalByProduct.map(item => item._id).filter(Boolean);
+    const products = await Product.find({ _id: { $in: productIds } })
+      .select("_id name importPrice category")
+      .populate("category", "name");
+
+    const productMap = new Map(products.map(p => [p._id.toString(), p]));
+
+    // Tính vốn đầu tư cho từng sản phẩm
+    const result = capitalByProduct
+      .map(item => {
+        const productId = item._id?.toString();
+        const product = productMap.get(productId);
+        
+        if (!product) return null;
+
+        const importPrice = product.importPrice || 0;
+        const totalCapital = importPrice * item.totalQuantity;
+        const totalProfit = item.totalRevenue - totalCapital;
+        const profitMargin = item.totalRevenue > 0 
+          ? ((totalProfit / item.totalRevenue) * 100).toFixed(2) 
+          : 0;
+
+        return {
+          product: {
+            _id: product._id,
+            name: product.name,
+            category: product.category,
+            importPrice: importPrice
+          },
+          totalQuantity: item.totalQuantity,
+          totalRevenue: item.totalRevenue,
+          totalCapital: totalCapital,
+          totalProfit: totalProfit,
+          profitMargin: parseFloat(profitMargin),
+          orderCount: item.orderCount
+        };
+      })
+      .filter(item => item !== null)
+      .sort((a, b) => b.totalCapital - a.totalCapital); // Sắp xếp theo vốn giảm dần
+
+    res.json(result);
+  } catch (error) {
+    console.error("Get capital by product error:", error);
     res.status(500).json({ message: "Lỗi server!" });
   }
 });

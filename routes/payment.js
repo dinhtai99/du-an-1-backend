@@ -5,6 +5,8 @@ const Cart = require("../models/Cart");
 const Product = require("../models/Product");
 const Voucher = require("../models/Voucher");
 const Notification = require("../models/Notification");
+const Address = require("../models/Address");
+const User = require("../models/User");
 const zalopayService = require("../services/zalopayService");
 const momoService = require("../services/momoService");
 const vnpayService = require("../services/vnpayService");
@@ -19,7 +21,7 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
   const startTime = Date.now();
   
   try {
-    const { shippingAddress, addressId, notes, voucherCode, orderId, items } = req.body;
+    const { addressId, notes, voucherCode, orderId, items } = req.body;
     console.log("📥 ZaloPay create request received at:", new Date().toISOString());
 
     let order;
@@ -41,9 +43,9 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
       // Lấy địa chỉ giao hàng
       let finalShippingAddress = null;
       
+      // Nếu có addressId, lấy địa chỉ từ Address collection
       if (addressId) {
         console.log('📍 ZaloPay: Lấy địa chỉ từ ID:', addressId);
-        const Address = require('../models/Address');
         const address = await Address.findOne({ _id: addressId, user: req.user.userId });
         if (!address) {
           return res.status(400).json({ message: "Không tìm thấy địa chỉ hoặc địa chỉ không thuộc về bạn!" });
@@ -56,27 +58,61 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
           district: address.district || "",
           city: address.city || ""
         };
-      } else if (shippingAddress) {
-        // Normalize và validate địa chỉ từ geolocation
-        const addressHelper = require('../utils/addressHelper');
-        const addressValidation = addressHelper.normalizeShippingAddress(shippingAddress);
+        console.log('✅ ZaloPay: Địa chỉ đã được lấy từ database:', finalShippingAddress);
+      } else {
+        // Nếu không có addressId, tự động tạo địa chỉ từ thông tin User profile
+        console.log('📍 ZaloPay: Không có addressId, lấy địa chỉ từ User profile');
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+          return res.status(404).json({ message: "Không tìm thấy thông tin người dùng!" });
+        }
         
-        if (!addressValidation || !addressValidation.isValid) {
-          console.error('❌ ZaloPay: Địa chỉ không hợp lệ:', {
-            original: shippingAddress,
-            errors: addressValidation?.errors || ['Địa chỉ không hợp lệ']
-          });
+        // Kiểm tra xem user có đủ thông tin địa chỉ không
+        if (!user.fullName || !user.phone || !user.address) {
           return res.status(400).json({ 
-            message: "Địa chỉ không hợp lệ!",
-            errors: addressValidation?.errors || ['Vui lòng kiểm tra lại thông tin địa chỉ'],
-            details: addressValidation?.errors
+            message: "Vui lòng cung cấp addressId hoặc cập nhật đầy đủ thông tin địa chỉ trong profile (Họ tên, SĐT, Địa chỉ)!" 
           });
         }
         
-        finalShippingAddress = addressValidation.normalized;
-        console.log('✅ ZaloPay: Địa chỉ đã được normalize:', finalShippingAddress);
-      } else {
-        return res.status(400).json({ message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)" });
+        // Tự động tạo Address từ thông tin User profile
+        // Tìm xem đã có địa chỉ tương tự chưa (để tránh tạo trùng)
+        let existingAddress = await Address.findOne({ 
+          user: req.user.userId,
+          fullName: user.fullName,
+          phone: user.phone,
+          address: user.address
+        });
+        
+        if (!existingAddress) {
+          // Tạo địa chỉ mới từ User profile
+          // Lưu ý: user.address chỉ là chuỗi đơn giản, không có ward, district, city riêng
+          // Nên ta sẽ lưu toàn bộ vào field address, và để ward, district, city trống
+          // Không set city mặc định vì user có thể ở bất kỳ đâu
+          existingAddress = new Address({
+            user: req.user.userId,
+            fullName: user.fullName,
+            phone: user.phone,
+            address: user.address,
+            ward: "",
+            district: "",
+            city: "", // Để trống, user sẽ cập nhật sau hoặc thêm vào địa chỉ chi tiết
+            isDefault: false
+          });
+          await existingAddress.save();
+          console.log('✅ ZaloPay: Đã tự động tạo địa chỉ từ User profile:', existingAddress._id);
+        } else {
+          console.log('✅ ZaloPay: Sử dụng địa chỉ đã tồn tại từ User profile:', existingAddress._id);
+        }
+        
+        finalShippingAddress = {
+          fullName: existingAddress.fullName,
+          phone: existingAddress.phone,
+          address: existingAddress.address,
+          ward: existingAddress.ward || "",
+          district: existingAddress.district || "",
+          city: existingAddress.city || ""
+        };
+        console.log('✅ ZaloPay: Địa chỉ đã được lấy từ User profile:', finalShippingAddress);
       }
 
       // Lấy giỏ hàng
@@ -189,9 +225,15 @@ router.post("/zalopay/create", verifyToken, async (req, res) => {
         }
 
         // Kiểm tra user được áp dụng
+        // Lưu ý: applicableUsers có thể đã được populate (User object) hoặc chưa (ObjectId)
         if (voucher.applicableUsers.length > 0) {
           const isApplicable = voucher.applicableUsers.some(
-            id => id.toString() === req.user.userId.toString()
+            id => {
+              // Nếu đã populate, id là User object → dùng id._id
+              // Nếu chưa populate, id là ObjectId → dùng id trực tiếp
+              const userId = id._id ? id._id.toString() : id.toString();
+              return userId === req.user.userId.toString();
+            }
           );
           if (!isApplicable) {
             return res.status(400).json({ message: "Bạn không được sử dụng voucher này!" });
@@ -675,7 +717,7 @@ router.get("/zalopay/status/:orderId", verifyToken, async (req, res) => {
  */
 router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
   try {
-    const { shippingAddress, addressId, notes, voucherCode, orderId, items } = req.body;
+    const { addressId, notes, voucherCode, orderId, items } = req.body;
 
     let order;
     let cart = null;
@@ -697,9 +739,9 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
       // Lấy địa chỉ giao hàng
       let finalShippingAddress = null;
       
+      // Nếu có addressId, lấy địa chỉ từ Address collection
       if (addressId) {
         console.log('📍 MoMo: Lấy địa chỉ từ ID:', addressId);
-        const Address = require('../models/Address');
         const address = await Address.findOne({ _id: addressId, user: req.user.userId });
         if (!address) {
           return res.status(400).json({ message: "Không tìm thấy địa chỉ hoặc địa chỉ không thuộc về bạn!" });
@@ -712,27 +754,61 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
           district: address.district || "",
           city: address.city || ""
         };
-      } else if (shippingAddress) {
-        // Normalize và validate địa chỉ từ geolocation
-        const addressHelper = require('../utils/addressHelper');
-        const addressValidation = addressHelper.normalizeShippingAddress(shippingAddress);
+        console.log('✅ MoMo: Địa chỉ đã được lấy từ database:', finalShippingAddress);
+      } else {
+        // Nếu không có addressId, tự động tạo địa chỉ từ thông tin User profile
+        console.log('📍 MoMo: Không có addressId, lấy địa chỉ từ User profile');
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+          return res.status(404).json({ message: "Không tìm thấy thông tin người dùng!" });
+        }
         
-        if (!addressValidation || !addressValidation.isValid) {
-          console.error('❌ MoMo: Địa chỉ không hợp lệ:', {
-            original: shippingAddress,
-            errors: addressValidation?.errors || ['Địa chỉ không hợp lệ']
-          });
+        // Kiểm tra xem user có đủ thông tin địa chỉ không
+        if (!user.fullName || !user.phone || !user.address) {
           return res.status(400).json({ 
-            message: "Địa chỉ không hợp lệ!",
-            errors: addressValidation?.errors || ['Vui lòng kiểm tra lại thông tin địa chỉ'],
-            details: addressValidation?.errors
+            message: "Vui lòng cung cấp addressId hoặc cập nhật đầy đủ thông tin địa chỉ trong profile (Họ tên, SĐT, Địa chỉ)!" 
           });
         }
         
-        finalShippingAddress = addressValidation.normalized;
-        console.log('✅ MoMo: Địa chỉ đã được normalize:', finalShippingAddress);
-      } else {
-        return res.status(400).json({ message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)" });
+        // Tự động tạo Address từ thông tin User profile
+        // Tìm xem đã có địa chỉ tương tự chưa (để tránh tạo trùng)
+        let existingAddress = await Address.findOne({ 
+          user: req.user.userId,
+          fullName: user.fullName,
+          phone: user.phone,
+          address: user.address
+        });
+        
+        if (!existingAddress) {
+          // Tạo địa chỉ mới từ User profile
+          // Lưu ý: user.address chỉ là chuỗi đơn giản, không có ward, district, city riêng
+          // Nên ta sẽ lưu toàn bộ vào field address, và để ward, district, city trống
+          // Không set city mặc định vì user có thể ở bất kỳ đâu
+          existingAddress = new Address({
+            user: req.user.userId,
+            fullName: user.fullName,
+            phone: user.phone,
+            address: user.address,
+            ward: "",
+            district: "",
+            city: "", // Để trống, user sẽ cập nhật sau hoặc thêm vào địa chỉ chi tiết
+            isDefault: false
+          });
+          await existingAddress.save();
+          console.log('✅ MoMo: Đã tự động tạo địa chỉ từ User profile:', existingAddress._id);
+        } else {
+          console.log('✅ MoMo: Sử dụng địa chỉ đã tồn tại từ User profile:', existingAddress._id);
+        }
+        
+        finalShippingAddress = {
+          fullName: existingAddress.fullName,
+          phone: existingAddress.phone,
+          address: existingAddress.address,
+          ward: existingAddress.ward || "",
+          district: existingAddress.district || "",
+          city: existingAddress.city || ""
+        };
+        console.log('✅ MoMo: Địa chỉ đã được lấy từ User profile:', finalShippingAddress);
       }
 
       // Lấy giỏ hàng
@@ -845,9 +921,15 @@ router.post("/momo/create", verifyToken, requireCustomer, async (req, res) => {
         }
 
         // Kiểm tra user được áp dụng
+        // Lưu ý: applicableUsers có thể đã được populate (User object) hoặc chưa (ObjectId)
         if (voucher.applicableUsers.length > 0) {
           const isApplicable = voucher.applicableUsers.some(
-            id => id.toString() === req.user.userId.toString()
+            id => {
+              // Nếu đã populate, id là User object → dùng id._id
+              // Nếu chưa populate, id là ObjectId → dùng id trực tiếp
+              const userId = id._id ? id._id.toString() : id.toString();
+              return userId === req.user.userId.toString();
+            }
           );
           if (!isApplicable) {
             return res.status(400).json({ message: "Bạn không được sử dụng voucher này!" });
@@ -1214,7 +1296,7 @@ router.get("/momo/status/:orderId", verifyToken, async (req, res) => {
  */
 router.post("/vnpay/create", verifyToken, requireCustomer, async (req, res) => {
   try {
-    const { shippingAddress, addressId, notes, voucherCode, orderId, items } = req.body;
+    const { addressId, notes, voucherCode, orderId, items } = req.body;
 
     let order;
     let cart = null;
@@ -1236,9 +1318,9 @@ router.post("/vnpay/create", verifyToken, requireCustomer, async (req, res) => {
       // Lấy địa chỉ giao hàng
       let finalShippingAddress = null;
       
+      // Nếu có addressId, lấy địa chỉ từ Address collection
       if (addressId) {
         console.log('📍 VNPay: Lấy địa chỉ từ ID:', addressId);
-        const Address = require('../models/Address');
         const address = await Address.findOne({ _id: addressId, user: req.user.userId });
         if (!address) {
           return res.status(400).json({ message: "Không tìm thấy địa chỉ hoặc địa chỉ không thuộc về bạn!" });
@@ -1251,27 +1333,61 @@ router.post("/vnpay/create", verifyToken, requireCustomer, async (req, res) => {
           district: address.district || "",
           city: address.city || ""
         };
-      } else if (shippingAddress) {
-        // Normalize và validate địa chỉ từ geolocation
-        const addressHelper = require('../utils/addressHelper');
-        const addressValidation = addressHelper.normalizeShippingAddress(shippingAddress);
+        console.log('✅ VNPay: Địa chỉ đã được lấy từ database:', finalShippingAddress);
+      } else {
+        // Nếu không có addressId, tự động tạo địa chỉ từ thông tin User profile
+        console.log('📍 VNPay: Không có addressId, lấy địa chỉ từ User profile');
+        const user = await User.findById(req.user.userId);
+        if (!user) {
+          return res.status(404).json({ message: "Không tìm thấy thông tin người dùng!" });
+        }
         
-        if (!addressValidation || !addressValidation.isValid) {
-          console.error('❌ VNPay: Địa chỉ không hợp lệ:', {
-            original: shippingAddress,
-            errors: addressValidation?.errors || ['Địa chỉ không hợp lệ']
-          });
+        // Kiểm tra xem user có đủ thông tin địa chỉ không
+        if (!user.fullName || !user.phone || !user.address) {
           return res.status(400).json({ 
-            message: "Địa chỉ không hợp lệ!",
-            errors: addressValidation?.errors || ['Vui lòng kiểm tra lại thông tin địa chỉ'],
-            details: addressValidation?.errors
+            message: "Vui lòng cung cấp addressId hoặc cập nhật đầy đủ thông tin địa chỉ trong profile (Họ tên, SĐT, Địa chỉ)!" 
           });
         }
         
-        finalShippingAddress = addressValidation.normalized;
-        console.log('✅ VNPay: Địa chỉ đã được normalize:', finalShippingAddress);
-      } else {
-        return res.status(400).json({ message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)" });
+        // Tự động tạo Address từ thông tin User profile
+        // Tìm xem đã có địa chỉ tương tự chưa (để tránh tạo trùng)
+        let existingAddress = await Address.findOne({ 
+          user: req.user.userId,
+          fullName: user.fullName,
+          phone: user.phone,
+          address: user.address
+        });
+        
+        if (!existingAddress) {
+          // Tạo địa chỉ mới từ User profile
+          // Lưu ý: user.address chỉ là chuỗi đơn giản, không có ward, district, city riêng
+          // Nên ta sẽ lưu toàn bộ vào field address, và để ward, district, city trống
+          // Không set city mặc định vì user có thể ở bất kỳ đâu
+          existingAddress = new Address({
+            user: req.user.userId,
+            fullName: user.fullName,
+            phone: user.phone,
+            address: user.address,
+            ward: "",
+            district: "",
+            city: "", // Để trống, user sẽ cập nhật sau hoặc thêm vào địa chỉ chi tiết
+            isDefault: false
+          });
+          await existingAddress.save();
+          console.log('✅ VNPay: Đã tự động tạo địa chỉ từ User profile:', existingAddress._id);
+        } else {
+          console.log('✅ VNPay: Sử dụng địa chỉ đã tồn tại từ User profile:', existingAddress._id);
+        }
+        
+        finalShippingAddress = {
+          fullName: existingAddress.fullName,
+          phone: existingAddress.phone,
+          address: existingAddress.address,
+          ward: existingAddress.ward || "",
+          district: existingAddress.district || "",
+          city: existingAddress.city || ""
+        };
+        console.log('✅ VNPay: Địa chỉ đã được lấy từ User profile:', finalShippingAddress);
       }
 
       // Lấy giỏ hàng
@@ -1477,8 +1593,9 @@ router.post("/vnpay/create", verifyToken, requireCustomer, async (req, res) => {
     });
     
     // Tạo payment URL
+    // Lưu ý: order.total đã là VND, vnpayService sẽ tự động nhân 100 để chuyển sang xu
     const vnpayResult = vnpayService.createPaymentUrl({
-      vnp_Amount: Math.round(order.total * 100), // VNPay yêu cầu số tiền tính bằng xu (x100)
+      vnp_Amount: Math.round(order.total), // Số tiền tính bằng VND (vnpayService sẽ nhân 100 để chuyển sang xu)
       vnp_TxnRef: vnp_TxnRef,
       vnp_OrderInfo: `Thanh toán đơn hàng ${order.orderNumber}`,
       vnp_IpAddr: clientIp,

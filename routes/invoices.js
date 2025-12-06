@@ -3,6 +3,8 @@ const router = express.Router();
 const Order = require('../models/Order');
 const Product = require('../models/Product');
 const Voucher = require('../models/Voucher');
+const Address = require('../models/Address');
+const User = require('../models/User');
 const { verifyToken, requireCustomer } = require('../middleware/authMiddleware');
 const zalopayService = require('../services/zalopayService');
 const momoService = require('../services/momoService');
@@ -81,17 +83,16 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
   console.log('User ID:', req.user.userId);
   
   try {
-    const { shippingAddress, addressId, items, discount, paymentMethod, notes, voucherCode } = req.body;
+    const { addressId, items, discount, paymentMethod, notes, voucherCode } = req.body;
     
     // ============================================
     // 1. VALIDATE VÀ LẤY ĐỊA CHỈ GIAO HÀNG
     // ============================================
     let finalShippingAddress = null;
     
-    // Nếu có addressId, lấy địa chỉ từ database
+    // Nếu có addressId, lấy địa chỉ từ Address collection
     if (addressId) {
       console.log('📍 Lấy địa chỉ từ ID:', addressId);
-      const Address = require('../models/Address');
       const address = await Address.findOne({ _id: addressId, user: req.user.userId });
       if (!address) {
         return res.status(400).json({
@@ -109,38 +110,66 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
         city: address.city || ""
       };
       console.log('✅ Địa chỉ từ database:', finalShippingAddress);
-    } 
-    // Nếu có shippingAddress object, sử dụng trực tiếp
-    else if (shippingAddress) {
-      console.log('📍 Sử dụng địa chỉ từ request body');
-      
-      // Normalize và validate địa chỉ từ geolocation
-      const addressHelper = require('../utils/addressHelper');
-      const addressValidation = addressHelper.normalizeShippingAddress(shippingAddress);
-      
-      if (!addressValidation || !addressValidation.isValid) {
-        console.error('❌ Địa chỉ không hợp lệ:', {
-          original: shippingAddress,
-          errors: addressValidation?.errors || ['Địa chỉ không hợp lệ']
-        });
-        return res.status(400).json({
+    } else {
+      // Nếu không có addressId, tự động tạo địa chỉ từ thông tin User profile
+      console.log('📍 Không có addressId, lấy địa chỉ từ User profile');
+      const user = await User.findById(req.user.userId);
+      if (!user) {
+        return res.status(404).json({
           success: false,
-          message: "Địa chỉ không hợp lệ!",
-          errors: addressValidation?.errors || ['Vui lòng kiểm tra lại thông tin địa chỉ'],
+          message: "Không tìm thấy thông tin người dùng!",
           data: null
         });
       }
       
-      finalShippingAddress = addressValidation.normalized;
-      console.log('✅ Địa chỉ đã được normalize:', finalShippingAddress);
-    } 
-    // Nếu không có cả hai
-    else {
-      return res.status(400).json({
-        success: false,
-        message: "Vui lòng cung cấp địa chỉ giao hàng! (addressId hoặc shippingAddress object)",
-        data: null
+      // Kiểm tra xem user có đủ thông tin địa chỉ không
+      if (!user.fullName || !user.phone || !user.address) {
+        return res.status(400).json({
+          success: false,
+          message: "Vui lòng cung cấp addressId hoặc cập nhật đầy đủ thông tin địa chỉ trong profile (Họ tên, SĐT, Địa chỉ)!",
+          data: null
+        });
+      }
+      
+      // Tự động tạo Address từ thông tin User profile
+      // Tìm xem đã có địa chỉ tương tự chưa (để tránh tạo trùng)
+      let existingAddress = await Address.findOne({ 
+        user: req.user.userId,
+        fullName: user.fullName,
+        phone: user.phone,
+        address: user.address
       });
+      
+      if (!existingAddress) {
+        // Tạo địa chỉ mới từ User profile
+        // Lưu ý: user.address chỉ là chuỗi đơn giản, không có ward, district, city riêng
+        // Nên ta sẽ lưu toàn bộ vào field address, và để ward, district, city trống
+        // Không set city mặc định vì user có thể ở bất kỳ đâu
+        existingAddress = new Address({
+          user: req.user.userId,
+          fullName: user.fullName,
+          phone: user.phone,
+          address: user.address,
+          ward: "",
+          district: "",
+          city: "", // Để trống, user sẽ cập nhật sau hoặc thêm vào địa chỉ chi tiết
+          isDefault: false
+        });
+        await existingAddress.save();
+        console.log('✅ Đã tự động tạo địa chỉ từ User profile:', existingAddress._id);
+      } else {
+        console.log('✅ Sử dụng địa chỉ đã tồn tại từ User profile:', existingAddress._id);
+      }
+      
+      finalShippingAddress = {
+        fullName: existingAddress.fullName,
+        phone: existingAddress.phone,
+        address: existingAddress.address,
+        ward: existingAddress.ward || "",
+        district: existingAddress.district || "",
+        city: existingAddress.city || "" // Có thể để trống nếu không có thông tin
+      };
+      console.log('✅ Địa chỉ đã được lấy từ User profile:', finalShippingAddress);
     }
 
     if (!items || items.length === 0) {
@@ -265,9 +294,15 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
       }
 
       // Kiểm tra user được áp dụng
+      // Lưu ý: applicableUsers có thể đã được populate (User object) hoặc chưa (ObjectId)
       if (voucher.applicableUsers.length > 0) {
         const isApplicable = voucher.applicableUsers.some(
-          id => id.toString() === req.user.userId.toString()
+          id => {
+            // Nếu đã populate, id là User object → dùng id._id
+            // Nếu chưa populate, id là ObjectId → dùng id trực tiếp
+            const userId = id._id ? id._id.toString() : id.toString();
+            return userId === req.user.userId.toString();
+          }
         );
         if (!isApplicable) {
           return res.status(400).json({
@@ -328,7 +363,7 @@ router.post('/', verifyToken, requireCustomer, async (req, res) => {
         address: finalShippingAddress.address,
         ward: finalShippingAddress.ward || "",
         district: finalShippingAddress.district || "",
-        city: finalShippingAddress.city
+        city: finalShippingAddress.city || "" // Đảm bảo luôn có giá trị (có thể là empty string)
       },
       items: orderItems,
       subtotal: subtotal,

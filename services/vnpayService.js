@@ -205,6 +205,7 @@ class VNPayService {
         var orderId = moment().format('YYYYMMDDHHmmss');
         
         // Lấy số tiền từ params (đơn vị: VND)
+        // Lưu ý: amount đã là VND, sẽ nhân 100 để chuyển sang xu (VNPay yêu cầu)
         var amount = params.vnp_Amount;
         
         // Mã ngân hàng (nếu có) - null nếu để khách hàng tự chọn

@@ -175,7 +175,7 @@ router.get("/:id/timeline", verifyToken, async (req, res) => {
  * @body {String} shippingAddress.fullName - Họ tên người nhận (required)
  * @body {String} shippingAddress.phone - Số điện thoại (required)
  * @body {String} shippingAddress.address - Địa chỉ chi tiết (required)
- * @body {String} shippingAddress.city - Tỉnh/Thành phố (required)
+ * @body {String} shippingAddress.city - Tỉnh/Thành phố (optional)
  * @body {String} paymentMethod - Phương thức thanh toán (COD|zalopay|momo|vnpay) (optional, mặc định COD)
  * @body {String} notes - Ghi chú (optional)
  * @body {String} voucherCode - Mã voucher (optional)
@@ -187,8 +187,9 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
     const { shippingAddress, paymentMethod, notes, voucherCode } = req.body;
 
     // Validate địa chỉ giao hàng: phải có đầy đủ thông tin bắt buộc
-    if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address || !shippingAddress.city) {
-      return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng!" });
+    // city là optional, có thể để trống
+    if (!shippingAddress || !shippingAddress.fullName || !shippingAddress.phone || !shippingAddress.address) {
+      return res.status(400).json({ message: "Vui lòng điền đầy đủ thông tin địa chỉ giao hàng (Họ tên, SĐT, Địa chỉ)!" });
     }
 
     // Lấy giỏ hàng của user đang đăng nhập
@@ -289,9 +290,15 @@ router.post("/", verifyToken, requireCustomer, async (req, res) => {
 
       // Kiểm tra user được áp dụng
       // Nếu applicableUsers có giá trị, user phải nằm trong danh sách
+      // Lưu ý: applicableUsers có thể đã được populate (User object) hoặc chưa (ObjectId)
       if (voucher.applicableUsers.length > 0) {
         const isApplicable = voucher.applicableUsers.some(
-          id => id.toString() === req.user.userId.toString()
+          id => {
+            // Nếu đã populate, id là User object → dùng id._id
+            // Nếu chưa populate, id là ObjectId → dùng id trực tiếp
+            const userId = id._id ? id._id.toString() : id.toString();
+            return userId === req.user.userId.toString();
+          }
         );
         if (!isApplicable) {
           return res.status(400).json({ message: "Bạn không được sử dụng voucher này!" });
@@ -452,6 +459,8 @@ router.put("/:id/status", verifyToken, requireAdminOrStaff, async (req, res) => 
       shipping: "Đơn hàng đang được giao",
       completed: "Đơn hàng đã hoàn thành",
       cancelled: "Đơn hàng đã bị hủy",
+      returning: "Đang hoàn hàng",
+      exchanging: "Đang đổi hàng",
     };
 
     // Cập nhật trạng thái mới
@@ -711,6 +720,364 @@ router.put("/:id/cancel", verifyToken, requireCustomer, async (req, res) => {
       success: false,
       message: "Lỗi server!" 
     });
+  }
+});
+
+/**
+ * 🔄 Yêu cầu hoàn hàng để đổi (chỉ customer)
+ * POST /api/orders/:id/return
+ * Customer yêu cầu hoàn hàng để đổi sau khi đã nhận hàng
+ * @middleware verifyToken - Phải đăng nhập
+ * @middleware requireCustomer - Chỉ customer mới được truy cập
+ * @param {String} id - ID của đơn hàng
+ * @body {String} reason - Lý do hoàn hàng (required, tối thiểu 3 ký tự, tối đa 500 ký tự)
+ * @body {Array} returnItems - Danh sách sản phẩm cần hoàn (optional, nếu không có thì hoàn toàn bộ)
+ * @body {Array} exchangeItems - Danh sách sản phẩm muốn đổi (optional)
+ * @returns {Object} { success, message, data: { order } }
+ */
+router.post("/:id/return", verifyToken, requireCustomer, async (req, res) => {
+  try {
+    // Lấy thông tin từ request body
+    const { reason, returnItems, exchangeItems } = req.body;
+    
+    // Tìm đơn hàng theo ID
+    const order = await Order.findById(req.params.id);
+
+    // Kiểm tra đơn hàng có tồn tại không
+    if (!order) {
+      return res.status(404).json({ 
+        success: false,
+        message: "Không tìm thấy đơn hàng!" 
+      });
+    }
+
+    // Customer chỉ yêu cầu hoàn hàng cho đơn hàng của mình
+    if (order.customer.toString() !== req.user.userId) {
+      return res.status(403).json({ 
+        success: false,
+        message: "Không có quyền yêu cầu hoàn hàng cho đơn hàng này!" 
+      });
+    }
+
+    // Chỉ có thể yêu cầu hoàn hàng khi đơn hàng đã hoàn thành (đã nhận hàng)
+    if (order.status !== "completed") {
+      return res.status(400).json({ 
+        success: false,
+        message: "Chỉ có thể yêu cầu hoàn hàng khi đơn hàng đã hoàn thành (đã nhận hàng)!" 
+      });
+    }
+
+    // Kiểm tra đơn hàng đã yêu cầu hoàn hàng chưa
+    if (order.status === "returning" || order.status === "exchanging") {
+      return res.status(400).json({ 
+        success: false,
+        message: "Đơn hàng đã được yêu cầu hoàn hàng!" 
+      });
+    }
+
+    // Validate lý do hoàn hàng
+    const returnReason = (reason || "").trim();
+    if (!returnReason || returnReason.length < 3) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Vui lòng nhập lý do hoàn hàng (ít nhất 3 ký tự)!" 
+      });
+    }
+
+    if (returnReason.length > 500) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Lý do hoàn hàng không được vượt quá 500 ký tự!" 
+      });
+    }
+
+    // Validate returnItems nếu có
+    // Nếu có returnItems, phải là mảng và mỗi item phải có productId và quantity
+    if (returnItems && Array.isArray(returnItems)) {
+      for (const item of returnItems) {
+        if (!item.product || !item.quantity || item.quantity <= 0) {
+          return res.status(400).json({ 
+            success: false,
+            message: "Danh sách sản phẩm hoàn hàng không hợp lệ!" 
+          });
+        }
+        
+        // Kiểm tra sản phẩm có trong đơn hàng không
+        const orderItem = order.items.find(
+          oi => oi.product.toString() === item.product.toString()
+        );
+        if (!orderItem) {
+          return res.status(400).json({ 
+            success: false,
+            message: `Sản phẩm ${item.product} không có trong đơn hàng!` 
+          });
+        }
+        
+        // Kiểm tra số lượng hoàn không vượt quá số lượng đã mua
+        if (item.quantity > orderItem.quantity) {
+          return res.status(400).json({ 
+            success: false,
+            message: `Số lượng hoàn hàng không được vượt quá số lượng đã mua!` 
+          });
+        }
+      }
+    }
+
+    // Validate exchangeItems nếu có
+    // Nếu có exchangeItems, phải là mảng và mỗi item phải có oldProductId, newProductId và quantity
+    if (exchangeItems && Array.isArray(exchangeItems)) {
+      for (const item of exchangeItems) {
+        if (!item.oldProduct || !item.newProduct || !item.quantity || item.quantity <= 0) {
+          return res.status(400).json({ 
+            success: false,
+            message: "Danh sách sản phẩm đổi hàng không hợp lệ!" 
+          });
+        }
+        
+        // Kiểm tra sản phẩm cũ có trong đơn hàng không
+        const orderItem = order.items.find(
+          oi => oi.product.toString() === item.oldProduct.toString()
+        );
+        if (!orderItem) {
+          return res.status(400).json({ 
+            success: false,
+            message: `Sản phẩm cũ ${item.oldProduct} không có trong đơn hàng!` 
+          });
+        }
+        
+        // Kiểm tra số lượng đổi không vượt quá số lượng đã mua
+        if (item.quantity > orderItem.quantity) {
+          return res.status(400).json({ 
+            success: false,
+            message: `Số lượng đổi hàng không được vượt quá số lượng đã mua!` 
+          });
+        }
+        
+        // Kiểm tra sản phẩm mới có tồn tại không
+        const Product = require("../models/Product");
+        const newProduct = await Product.findById(item.newProduct);
+        if (!newProduct || newProduct.status === 0) {
+          return res.status(400).json({ 
+            success: false,
+            message: `Sản phẩm mới ${item.newProduct} không tồn tại hoặc đã bị ẩn!` 
+          });
+        }
+      }
+    }
+
+    // Cập nhật trạng thái đơn hàng thành "returning" (đang hoàn hàng)
+    order.status = "returning";
+    order.returnRequestedAt = new Date(); // Ghi lại thời gian yêu cầu hoàn hàng
+    order.returnReason = returnReason; // Lưu lý do hoàn hàng
+    
+    // Lưu danh sách sản phẩm cần hoàn (nếu có)
+    if (returnItems && Array.isArray(returnItems) && returnItems.length > 0) {
+      order.returnItems = returnItems.map(item => ({
+        product: item.product,
+        quantity: item.quantity,
+        reason: item.reason || ""
+      }));
+    } else {
+      // Nếu không có returnItems, hoàn toàn bộ đơn hàng
+      order.returnItems = order.items.map(item => ({
+        product: item.product,
+        quantity: item.quantity,
+        reason: ""
+      }));
+    }
+    
+    // Lưu danh sách sản phẩm muốn đổi (nếu có)
+    if (exchangeItems && Array.isArray(exchangeItems) && exchangeItems.length > 0) {
+      order.exchangeItems = exchangeItems.map(item => ({
+        oldProduct: item.oldProduct,
+        newProduct: item.newProduct,
+        quantity: item.quantity
+      }));
+    }
+
+    // Thêm vào timeline để theo dõi lịch sử
+    if (!order.timeline) {
+      order.timeline = [];
+    }
+    
+    let timelineMessage = `Khách hàng yêu cầu hoàn hàng để đổi. Lý do: ${returnReason}`;
+    if (exchangeItems && exchangeItems.length > 0) {
+      timelineMessage += ` (Có yêu cầu đổi hàng)`;
+    }
+    
+    order.timeline.push({
+      status: "returning", // Trạng thái
+      message: timelineMessage, // Thông báo
+      updatedBy: req.user.userId, // Người yêu cầu
+    });
+
+    // Lưu đơn hàng đã cập nhật vào database
+    await order.save();
+
+    // Tạo thông báo cho admin
+    const Notification = require("../models/Notification");
+    // Tìm tất cả admin để gửi thông báo
+    const User = require("../models/User");
+    const admins = await User.find({ role: { $in: ["admin", "staff"] } });
+    
+    for (const admin of admins) {
+      await Notification.create({
+        user: admin._id, // Admin nhận thông báo
+        type: "order", // Loại thông báo
+        title: "Yêu cầu hoàn hàng mới", // Tiêu đề
+        message: `Đơn hàng ${order.orderNumber} có yêu cầu hoàn hàng để đổi`, // Nội dung
+        link: `/orders/${order._id}`, // Link đến đơn hàng
+      });
+    }
+
+    // Populate thông tin chi tiết để trả về
+    await order.populate("items.product", "name image price");
+    await order.populate("timeline.updatedBy", "fullName");
+    if (order.returnItems && order.returnItems.length > 0) {
+      await order.populate("returnItems.product", "name image");
+    }
+    if (order.exchangeItems && order.exchangeItems.length > 0) {
+      await order.populate("exchangeItems.oldProduct", "name image");
+      await order.populate("exchangeItems.newProduct", "name image");
+    }
+
+    // Trả về kết quả
+    res.json({
+      success: true,
+      message: "Yêu cầu hoàn hàng đã được gửi! Admin sẽ xử lý trong thời gian sớm nhất.",
+      data: {
+        order: order, // Đơn hàng đã cập nhật
+      }
+    });
+  } catch (error) {
+    console.error("Request return order error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Lỗi server!" 
+    });
+  }
+});
+
+/**
+ * ✏️ Xử lý hoàn hàng (Admin/Staff)
+ * PUT /api/orders/:id/return-status
+ * Admin xử lý yêu cầu hoàn hàng: chấp nhận và chuyển sang "exchanging" hoặc từ chối
+ * @middleware verifyToken - Phải đăng nhập
+ * @middleware requireAdminOrStaff - Chỉ admin/staff mới được truy cập
+ * @param {String} id - ID của đơn hàng
+ * @body {String} action - Hành động: "accept" (chấp nhận) hoặc "reject" (từ chối) (required)
+ * @body {String} note - Ghi chú của admin (optional)
+ * @returns {Object} { message, order }
+ */
+router.put("/:id/return-status", verifyToken, requireAdminOrStaff, async (req, res) => {
+  try {
+    // Lấy thông tin từ request body
+    const { action, note } = req.body;
+    
+    // Tìm đơn hàng theo ID
+    const order = await Order.findById(req.params.id);
+
+    // Kiểm tra đơn hàng có tồn tại không
+    if (!order) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng!" });
+    }
+
+    // Chỉ xử lý được đơn hàng đang ở trạng thái "returning"
+    if (order.status !== "returning") {
+      return res.status(400).json({ 
+        message: `Chỉ có thể xử lý đơn hàng đang ở trạng thái "đang hoàn hàng"!` 
+      });
+    }
+
+    // Validate action
+    if (!action || (action !== "accept" && action !== "reject")) {
+      return res.status(400).json({ 
+        message: "Action phải là 'accept' hoặc 'reject'!" 
+      });
+    }
+
+    // Xử lý theo action
+    if (action === "accept") {
+      // Chấp nhận hoàn hàng: chuyển sang "exchanging" (đang đổi hàng)
+      order.status = "exchanging";
+      order.returnProcessedAt = new Date(); // Ghi lại thời gian xử lý
+      order.returnProcessedBy = req.user.userId; // Lưu admin xử lý
+      
+      // Thêm vào timeline
+      if (!order.timeline) {
+        order.timeline = [];
+      }
+      order.timeline.push({
+        status: "exchanging", // Trạng thái
+        message: note || "Admin đã chấp nhận yêu cầu hoàn hàng và đang xử lý đổi hàng", // Thông báo
+        updatedBy: req.user.userId, // Người xử lý
+      });
+
+      // Tạo thông báo cho customer
+      await Notification.create({
+        user: order.customer, // Customer nhận thông báo
+        type: "order", // Loại thông báo
+        title: "Yêu cầu hoàn hàng đã được chấp nhận", // Tiêu đề
+        message: `Đơn hàng ${order.orderNumber} đã được chấp nhận hoàn hàng và đang được xử lý đổi hàng`, // Nội dung
+        link: `/orders/${order._id}`, // Link đến đơn hàng
+      });
+    } else if (action === "reject") {
+      // Từ chối hoàn hàng: chuyển lại về "completed"
+      order.status = "completed";
+      
+      // Xóa thông tin hoàn hàng
+      order.returnRequestedAt = undefined;
+      order.returnReason = undefined;
+      order.returnItems = [];
+      order.exchangeItems = [];
+      
+      // Thêm vào timeline
+      if (!order.timeline) {
+        order.timeline = [];
+      }
+      order.timeline.push({
+        status: "completed", // Trạng thái
+        message: note || "Admin đã từ chối yêu cầu hoàn hàng", // Thông báo
+        updatedBy: req.user.userId, // Người xử lý
+      });
+
+      // Tạo thông báo cho customer
+      await Notification.create({
+        user: order.customer, // Customer nhận thông báo
+        type: "order", // Loại thông báo
+        title: "Yêu cầu hoàn hàng đã bị từ chối", // Tiêu đề
+        message: `Yêu cầu hoàn hàng cho đơn hàng ${order.orderNumber} đã bị từ chối. ${note || ""}`, // Nội dung
+        link: `/orders/${order._id}`, // Link đến đơn hàng
+      });
+    }
+
+    // Lưu đơn hàng đã cập nhật vào database
+    await order.save();
+
+    // Populate thông tin chi tiết để trả về
+    await order.populate("customer", "fullName email");
+    await order.populate("shipper", "fullName");
+    await order.populate("items.product", "name image price");
+    await order.populate("timeline.updatedBy", "fullName");
+    await order.populate("returnProcessedBy", "fullName");
+    if (order.returnItems && order.returnItems.length > 0) {
+      await order.populate("returnItems.product", "name image");
+    }
+    if (order.exchangeItems && order.exchangeItems.length > 0) {
+      await order.populate("exchangeItems.oldProduct", "name image");
+      await order.populate("exchangeItems.newProduct", "name image");
+    }
+
+    // Trả về thông báo thành công và thông tin đơn hàng đã cập nhật
+    res.json({
+      message: action === "accept" 
+        ? "Đã chấp nhận yêu cầu hoàn hàng và chuyển sang trạng thái đang đổi hàng!" 
+        : "Đã từ chối yêu cầu hoàn hàng!",
+      order, // Đơn hàng đã cập nhật với thông tin đầy đủ
+    });
+  } catch (error) {
+    console.error("Process return order error:", error);
+    res.status(500).json({ message: "Lỗi server!" });
   }
 });
 
