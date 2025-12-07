@@ -125,11 +125,9 @@ const orderSchema = new mongoose.Schema({
   // new = Mới tạo, processing = Đang xử lý
   // shipping = Đang giao hàng, completed = Hoàn thành
   // cancelled = Đã hủy
-  // returning = Đang hoàn hàng (khách hàng đã yêu cầu hoàn hàng)
-  // exchanging = Đang đổi hàng (admin đã chấp nhận hoàn hàng và đang xử lý đổi)
   status: { 
     type: String, 
-    enum: ["new", "processing", "shipping", "completed", "cancelled", "returning", "exchanging"], 
+    enum: ["new", "processing", "shipping", "completed", "cancelled"], 
     default: "new" 
   },
   
@@ -156,35 +154,6 @@ const orderSchema = new mongoose.Schema({
   
   // Thời gian hoàn thành - Optional
   completedAt: { type: Date },
-  
-  // Thông tin hoàn hàng để đổi - Optional
-  // returnRequestedAt: Thời gian khách hàng yêu cầu hoàn hàng
-  returnRequestedAt: { type: Date },
-  
-  // returnReason: Lý do khách hàng yêu cầu hoàn hàng
-  returnReason: { type: String },
-  
-  // returnItems: Danh sách sản phẩm cần hoàn (nếu chỉ hoàn một phần)
-  // Mảng các object { productId, quantity, reason }
-  returnItems: [{ 
-    product: { type: mongoose.Schema.Types.ObjectId, ref: "Product" }, // Sản phẩm cần hoàn
-    quantity: { type: Number, required: true }, // Số lượng hoàn
-    reason: { type: String }, // Lý do hoàn sản phẩm này
-  }],
-  
-  // exchangeItems: Danh sách sản phẩm muốn đổi (nếu có)
-  // Mảng các object { oldProductId, newProductId, quantity }
-  exchangeItems: [{ 
-    oldProduct: { type: mongoose.Schema.Types.ObjectId, ref: "Product" }, // Sản phẩm cũ
-    newProduct: { type: mongoose.Schema.Types.ObjectId, ref: "Product" }, // Sản phẩm mới
-    quantity: { type: Number, required: true }, // Số lượng đổi
-  }],
-  
-  // returnProcessedAt: Thời gian admin xử lý hoàn hàng
-  returnProcessedAt: { type: Date },
-  
-  // returnProcessedBy: Admin xử lý hoàn hàng
-  returnProcessedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   
   // Timeline theo dõi đơn hàng - Mảng các sự kiện
   // Mỗi sự kiện ghi lại: status, message, updatedBy, createdAt

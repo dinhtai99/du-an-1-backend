@@ -708,6 +708,33 @@
             border-color: #667eea;
         }
         
+        /* Date input placeholder */
+        .date-input-container {
+            position: relative;
+            width: 100%;
+        }
+        
+        .date-placeholder {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 1;
+            background: white;
+            padding: 0 2px;
+        }
+        
+        .date-input-container input[type="date"]:focus ~ .date-placeholder {
+            display: none !important;
+        }
+        
+        .date-input-container input[type="date"]:not(:invalid):not(:focus) ~ .date-placeholder {
+            display: none !important;
+        }
+        
         /* Custom date input wrapper */
         .date-input-wrapper {
             position: relative;
@@ -900,8 +927,6 @@
                                 <option value="shipping">Đang giao</option>
                                 <option value="completed">Hoàn thành</option>
                                 <option value="cancelled">Đã hủy</option>
-                                <option value="returning">Đang hoàn hàng</option>
-                                <option value="exchanging">Đang đổi hàng</option>
                             </select>
                         </div>
                     </div>
@@ -2124,9 +2149,7 @@
                 'processing': 'Đang xử lý',
                 'shipping': 'Đang giao',
                 'completed': 'Hoàn thành',
-                'cancelled': 'Đã hủy',
-                'returning': 'Đang hoàn hàng',
-                'exchanging': 'Đang đổi hàng'
+                'cancelled': 'Đã hủy'
             };
             return statusMap[status] || status;
         }
@@ -2188,8 +2211,6 @@
                             <option value="shipping" ${currentStatus === 'shipping' ? 'selected' : ''}>Đang giao</option>
                             <option value="completed" ${currentStatus === 'completed' ? 'selected' : ''}>Hoàn thành</option>
                             <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>Đã hủy</option>
-                            <option value="returning" ${currentStatus === 'returning' ? 'selected' : ''}>Đang hoàn hàng</option>
-                            <option value="exchanging" ${currentStatus === 'exchanging' ? 'selected' : ''}>Đang đổi hàng</option>
                         </select>
                     </div>
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
@@ -2721,16 +2742,18 @@
                             <div style="display: flex; flex-wrap: wrap; gap: 15px; align-items: end;">
                                 <div style="min-width: 200px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">📅 Từ ngày:</label>
-                                    <div style="position: relative;">
-                                        <input type="date" id="statFilterStartDate" value="${savedStartDate}" style="padding: 10px 40px 10px 10px; border: 2px solid #667eea; border-radius: 5px; width: 100%; font-size: 14px; cursor: pointer; background: white; appearance: none; -webkit-appearance: none;" onclick="if(this.showPicker) this.showPicker(); else this.focus();" onchange="loadStatistics()">
-                                        <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #667eea; font-size: 20px;">📅</span>
+                                    <div class="date-input-container" style="position: relative;">
+                                        <input type="date" id="statFilterStartDate" value="${savedStartDate}" placeholder="dd/mm/yyyy" style="padding: 10px 40px 10px 10px; border: 2px solid #667eea; border-radius: 5px; width: 100%; font-size: 14px; cursor: pointer; background: white; appearance: none; -webkit-appearance: none;" onclick="if(this.showPicker) this.showPicker(); else this.focus();" onchange="updateDatePlaceholder('statFilterStartDate'); loadStatistics();">
+                                        <span class="date-placeholder" id="statFilterStartDatePlaceholder" style="${savedStartDate ? 'display: none;' : ''}">dd/mm/yyyy</span>
+                                        <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #667eea; font-size: 20px; z-index: 2;">📅</span>
                                     </div>
                                 </div>
                                 <div style="min-width: 200px;">
                                     <label style="display: block; margin-bottom: 5px; font-weight: 600; color: #555;">📅 Đến ngày:</label>
-                                    <div style="position: relative;">
-                                        <input type="date" id="statFilterEndDate" value="${savedEndDate}" style="padding: 10px 40px 10px 10px; border: 2px solid #667eea; border-radius: 5px; width: 100%; font-size: 14px; cursor: pointer; background: white; appearance: none; -webkit-appearance: none;" onclick="if(this.showPicker) this.showPicker(); else this.focus();" onchange="loadStatistics()">
-                                        <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #667eea; font-size: 20px;">📅</span>
+                                    <div class="date-input-container" style="position: relative;">
+                                        <input type="date" id="statFilterEndDate" value="${savedEndDate}" placeholder="dd/mm/yyyy" style="padding: 10px 40px 10px 10px; border: 2px solid #667eea; border-radius: 5px; width: 100%; font-size: 14px; cursor: pointer; background: white; appearance: none; -webkit-appearance: none;" onclick="if(this.showPicker) this.showPicker(); else this.focus();" onchange="updateDatePlaceholder('statFilterEndDate'); loadStatistics();">
+                                        <span class="date-placeholder" id="statFilterEndDatePlaceholder" style="${savedEndDate ? 'display: none;' : ''}">dd/mm/yyyy</span>
+                                        <span style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #667eea; font-size: 20px; z-index: 2;">📅</span>
                                     </div>
                                 </div>
                                 <div>
@@ -3035,6 +3058,11 @@
                         ${detailedStatsHtml}
                     `;
                     
+                    // Khởi tạo date inputs sau khi render HTML
+                    setTimeout(() => {
+                        initDateInputs();
+                    }, 50);
+                    
                     // Render biểu đồ sau khi HTML được tạo (chỉ khi có filter)
                     if (params.toString()) {
                         setTimeout(() => {
@@ -3338,10 +3366,94 @@
             }
         }
         
+        // Format date to dd/mm/yyyy
+        function formatDateToDisplay(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString + 'T00:00:00');
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+        
+        // Update date placeholder visibility
+        function updateDatePlaceholder(inputId) {
+            const input = document.getElementById(inputId);
+            const placeholder = document.getElementById(inputId + 'Placeholder');
+            if (input && placeholder) {
+                if (input.value) {
+                    placeholder.style.display = 'none';
+                } else {
+                    placeholder.style.display = 'block';
+                }
+            }
+        }
+        
+        // Initialize date inputs after loadStatistics
+        function initDateInputs() {
+            const startInput = document.getElementById('statFilterStartDate');
+            const endInput = document.getElementById('statFilterEndDate');
+            const startPlaceholder = document.getElementById('statFilterStartDatePlaceholder');
+            const endPlaceholder = document.getElementById('statFilterEndDatePlaceholder');
+            
+            if (startInput) {
+                // Update placeholder visibility on focus/blur
+                startInput.addEventListener('focus', function() {
+                    if (startPlaceholder) startPlaceholder.style.display = 'none';
+                });
+                startInput.addEventListener('blur', function() {
+                    if (!this.value && startPlaceholder) {
+                        startPlaceholder.style.display = 'block';
+                    }
+                });
+                // Initial state
+                if (startInput.value && startPlaceholder) {
+                    startPlaceholder.style.display = 'none';
+                } else if (startPlaceholder) {
+                    startPlaceholder.style.display = 'block';
+                }
+            }
+            
+            if (endInput) {
+                // Update placeholder visibility on focus/blur
+                endInput.addEventListener('focus', function() {
+                    if (endPlaceholder) endPlaceholder.style.display = 'none';
+                });
+                endInput.addEventListener('blur', function() {
+                    if (!this.value && endPlaceholder) {
+                        endPlaceholder.style.display = 'block';
+                    }
+                });
+                // Initial state
+                if (endInput.value && endPlaceholder) {
+                    endPlaceholder.style.display = 'none';
+                } else if (endPlaceholder) {
+                    endPlaceholder.style.display = 'block';
+                }
+            }
+        }
+        
         // Clear date filter
         function clearDateFilter() {
-            document.getElementById('statFilterStartDate').value = '';
-            document.getElementById('statFilterEndDate').value = '';
+            const startInput = document.getElementById('statFilterStartDate');
+            const endInput = document.getElementById('statFilterEndDate');
+            const startPlaceholder = document.getElementById('statFilterStartDatePlaceholder');
+            const endPlaceholder = document.getElementById('statFilterEndDatePlaceholder');
+            
+            if (startInput) {
+                startInput.value = '';
+                if (startPlaceholder) {
+                    startPlaceholder.style.display = 'block';
+                }
+            }
+            
+            if (endInput) {
+                endInput.value = '';
+                if (endPlaceholder) {
+                    endPlaceholder.style.display = 'block';
+                }
+            }
+            
             localStorage.removeItem('statFilterStartDate');
             localStorage.removeItem('statFilterEndDate');
             loadStatistics();
@@ -3977,46 +4089,10 @@
                                     <p style="margin: 0; color: #856404;">${order.notes}</p>
                                 </div>
                                 ` : ''}
-
-                                ${order.status === 'returning' ? `
-                                <div style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ff9800;">
-                                    <h3 style="margin: 0 0 15px 0; color: #e65100;">🔄 Yêu cầu hoàn hàng để đổi</h3>
-                                    <p style="margin: 5px 0;"><strong>Lý do:</strong> ${order.returnReason || 'N/A'}</p>
-                                    ${order.returnRequestedAt ? `<p style="margin: 5px 0;"><strong>Thời gian yêu cầu:</strong> ${new Date(order.returnRequestedAt).toLocaleString('vi-VN')}</p>` : ''}
-                                    ${order.returnItems && order.returnItems.length > 0 ? `
-                                        <div style="margin-top: 10px;">
-                                            <strong>Sản phẩm cần hoàn:</strong>
-                                            <ul style="margin: 5px 0; padding-left: 20px;">
-                                                ${order.returnItems.map(item => `<li>${item.product?.name || 'N/A'} - Số lượng: ${item.quantity}${item.reason ? ` (Lý do: ${item.reason})` : ''}</li>`).join('')}
-                                            </ul>
-                                        </div>
-                                    ` : ''}
-                                    ${order.exchangeItems && order.exchangeItems.length > 0 ? `
-                                        <div style="margin-top: 10px;">
-                                            <strong>Sản phẩm muốn đổi:</strong>
-                                            <ul style="margin: 5px 0; padding-left: 20px;">
-                                                ${order.exchangeItems.map(item => `<li>${item.oldProduct?.name || 'N/A'} → ${item.newProduct?.name || 'N/A'} (Số lượng: ${item.quantity})</li>`).join('')}
-                                            </ul>
-                                        </div>
-                                    ` : ''}
-                                    <div style="margin-top: 15px; display: flex; gap: 10px;">
-                                        <button class="btn btn-success" onclick="processReturnOrder('${id}', 'accept')">✅ Chấp nhận</button>
-                                        <button class="btn btn-danger" onclick="processReturnOrder('${id}', 'reject')">❌ Từ chối</button>
-                                    </div>
-                                </div>
-                                ` : ''}
-
-                                ${order.status === 'exchanging' ? `
-                                <div style="margin-bottom: 20px; padding: 15px; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196f3;">
-                                    <h3 style="margin: 0 0 15px 0; color: #1565c0;">🔄 Đang xử lý đổi hàng</h3>
-                                    ${order.returnProcessedAt ? `<p style="margin: 5px 0;"><strong>Thời gian xử lý:</strong> ${new Date(order.returnProcessedAt).toLocaleString('vi-VN')}</p>` : ''}
-                                    ${order.returnProcessedBy ? `<p style="margin: 5px 0;"><strong>Người xử lý:</strong> ${order.returnProcessedBy?.fullName || 'N/A'}</p>` : ''}
-                                </div>
-                                ` : ''}
                             </div>
                             <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
                                 <button class="btn btn-secondary" onclick="closeOrderDetailModal()">Đóng</button>
-                                ${order.status !== 'completed' && order.status !== 'cancelled' && order.status !== 'returning' && order.status !== 'exchanging' ? 
+                                ${order.status !== 'completed' && order.status !== 'cancelled' ? 
                                     `<button class="btn btn-primary" onclick="closeOrderDetailModal(); updateOrderStatus('${id}')">Cập nhật trạng thái</button>` : ''}
                             </div>
                         </div>
@@ -4042,45 +4118,6 @@
             const modal = document.getElementById('orderDetailModal');
             if (modal) {
                 modal.remove();
-            }
-        }
-
-        async function processReturnOrder(orderId, action) {
-            // action: 'accept' hoặc 'reject'
-            if (!confirm(action === 'accept' 
-                ? 'Bạn có chắc chắn muốn chấp nhận yêu cầu hoàn hàng này?' 
-                : 'Bạn có chắc chắn muốn từ chối yêu cầu hoàn hàng này?')) {
-                return;
-            }
-
-            const note = prompt('Nhập ghi chú (tùy chọn):');
-            if (note === null) return; // User đã hủy
-
-            try {
-                const response = await fetch(`${API_BASE}/orders/${orderId}/return-status`, {
-                    method: 'PUT',
-                    headers: {
-                        ...getAuthHeaders(),
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        action: action,
-                        note: note || ''
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    alert(data.message || 'Xử lý yêu cầu hoàn hàng thành công!');
-                    closeOrderDetailModal();
-                    loadOrders(); // Reload danh sách đơn hàng
-                } else {
-                    alert(data.message || 'Lỗi xử lý yêu cầu hoàn hàng!');
-                }
-            } catch (error) {
-                console.error('Process return order error:', error);
-                alert('Lỗi kết nối server!');
             }
         }
 
